@@ -2,7 +2,7 @@
 name = "vibe-ready"
 version = "0.1.0"
 edition = "2021"
-description = ""
+description = "This is the project framework for vibe coding, with multiple optional modules, aiming to quickly build vibe coding projects"
 license = "MIT"
 repository = "https://github.com/0barman/vibe-ready"
 readme = "README.md"
