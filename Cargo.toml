@@ -1,0 +1,11 @@
+[package]
+name = "vibe-ready"
+version = "0.1.0"
+edition = "2021"
+description = ""
+license = "MIT"
+repository = "https://github.com/0barman/vibe-ready"
+readme = "README.md"
+keywords = ["async", "download", "http", "upload", "resume"]
+
+[dependencies]
