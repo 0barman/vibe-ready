@@ -1,6 +1,6 @@
 [package]
 name = "vibe-ready"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "This is the project framework for vibe coding, with multiple optional modules, aiming to quickly build vibe coding projects"
 license = "MIT"
@@ -8,4 +8,47 @@ repository = "https://github.com/0barman/vibe-ready"
 readme = "README.md"
 keywords = ["async", "download", "http", "upload", "resume"]
 
+[features]
+default = ["log-diesel", "store-diesel-sqlite"]
+log-diesel = ["dep:diesel"]
+# Noop backends are always available; these empty features are kept for compatibility.
+log-noop = []
+store-diesel-sqlite = ["dep:diesel"]
+store-noop = []
+
 [dependencies]
+log  = { version = "0.4.29", features = ["max_level_trace", "release_max_level_info"] }
+reqwest = { version = "0.12.28", default-features = false, features = [
+    "multipart",
+    "stream",
+    "rustls-tls",
+    "json",
+] }
+tokio = { version = "1.50.0", default-features = false, features = [
+    "rt-multi-thread",
+    "sync",
+    "macros",
+    "time",
+    "io-util",
+    "fs",
+    "net",
+] }
+
+chrono = "0.4.44"
+indexmap = { version = "2.14.0", features = ["serde"] }
+lazy_static = "1.5.0"
+futures="0.3"
+#
+threadpool = "1.8.1"
+
+# FromPrimitive
+num-traits = "0.2.19"
+num-derive = "0.4.2"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+strum_macros = "0.28.0"
+
+# data_utils
+time = { version = "0.3.47", features = ["formatting"] }
+once_cell = "1.21.4"
+diesel = { version = "2.3.9", features = ["sqlite"], optional = true }
