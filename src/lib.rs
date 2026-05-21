@@ -1,1 +1,109 @@
-pub mod engine;
+pub(crate) mod api;
+pub(crate) mod log;
+pub(crate) mod net;
+pub(crate) mod platform;
+pub(crate) mod status;
+pub(crate) mod store;
+pub(crate) mod utils;
+
+/// Build-time capabilities available in the current crate build.
+pub use api::capabilities::VibeCapabilities;
+/// Connection state reported by the SDK runtime.
+pub use api::connection_status::VibeConnectionStatus;
+/// Main entry point for creating and driving a vibe-ready runtime.
+pub use api::engine::VibeEngine;
+/// Lifecycle state of a [`VibeEngine`].
+pub use api::engine::VibeEngineState;
+/// Application identity used to isolate SDK data on disk.
+pub use api::engine_config::VibeAppConfig;
+/// Backup behavior for SDK managed storage.
+pub use api::engine_config::VibeBackupStrategy;
+/// Configuration used to create a [`VibeEngine`].
+pub use api::engine_config::VibeEngineConfig;
+/// Builder for [`VibeEngineConfig`].
+pub use api::engine_config::VibeEngineConfigBuilder;
+/// Log backend selected for SDK log persistence.
+pub use api::engine_config::VibeLogBackend;
+/// Logging behavior used by the SDK.
+pub use api::engine_config::VibeLogConfig;
+/// Runtime sizing and queue capacity used by [`VibeEngine`].
+pub use api::engine_config::VibeRuntimeConfig;
+/// Store backend selected for SDK persistence.
+pub use api::engine_config::VibeStoreBackend;
+/// Storage behavior used by the SDK.
+pub use api::engine_config::VibeStoreConfig;
+/// Error type returned by vibe-ready operations.
+pub use api::engine_error::VibeEngineError;
+/// Stable error code used by [`VibeError`].
+pub use api::engine_error::VibeEngineErrorCode as VibeErrorCode;
+/// High-level error category returned by [`VibeEngineError`].
+pub use api::engine_error::VibeErrorKind;
+/// Platform identifier used by [`VibeEngineConfig`].
+pub use api::platform_type::VibePlatformType;
+/// Cooperative cancellation token consumed by scheduled tasks.
+pub use api::scheduler::VibeCancellationToken;
+/// Handle returned by `VibeEngine::schedule_after` / `schedule_every` / `post_with_priority`.
+pub use api::scheduler::VibeTaskHandle;
+/// Snapshot of a scheduler-tracked task.
+pub use api::scheduler::VibeTaskInfo;
+/// Origin category of a scheduler-tracked task.
+pub use api::scheduler::VibeTaskKind;
+/// Priority lane used by the B9 task scheduler.
+pub use api::scheduler::VibeTaskPriority;
+/// Diagnostic panel listing live scheduler tasks.
+pub use api::scheduler::VibeTaskPanel;
+/// Lifecycle state of a scheduler-tracked task.
+pub use api::scheduler::VibeTaskState;
+/// Log listener callback type.
+pub use log::log_def::LogListener as VibeLogListener;
+/// Log record source category.
+pub use log::log_def::LogType as VibeLogType;
+/// Log entry delivered to log listeners.
+pub use log::log_def::VibeLogInfo;
+/// Log severity used by the SDK.
+pub use log::log_level::LogLevel as VibeLogLevel;
+/// Runtime status manager exposed for advanced integrations.
+pub use status::status_manager::VibeStatusManager;
+/// Database client exposed for advanced integrations.
+pub use store::db::db_client::VibeDbClient;
+/// Database error details exposed for advanced integrations.
+pub use store::db::enums::db_error::VibeDbErrorInfo;
+/// High-level value accepted by the SDK key-value store.
+pub use store::db::tables::key_val::VibeKvValue;
+/// Key-value row returned by advanced database APIs.
+pub use store::db::tables::key_val::VibeTableKeyVal;
+/// High-level key-value store facade.
+pub use store::kv_store::VibeKvStore;
+/// Bucket-scoped view of [`VibeKvStore`].
+pub use store::kv_store::VibeKvBucket;
+/// Change notification dispatched to KV listeners.
+pub use store::kv_store::VibeKvChange;
+/// Variant of [`VibeKvChange`] indicating whether a key was set or removed.
+pub use store::kv_store::VibeKvChangeKind;
+/// Cancellation handle returned by `VibeKvStore::on_change`.
+pub use store::kv_store::VibeKvListenerId;
+/// Buffered transaction handle used inside `VibeKvStore::transaction`.
+pub use store::kv_store::VibeKvTx;
+
+#[doc(hidden)]
+pub use log::logger_macro::on_log as __vibe_internal_log_on_log;
+
+/// Result alias used by vibe-ready public APIs.
+pub type VibeResult<T> = Result<T, VibeEngineError>;
+
+/// Short alias for [`VibeEngineError`].
+pub type VibeError = VibeEngineError;
+
+/// Common imports for applications using vibe-ready.
+pub mod prelude {
+    pub use crate::{
+        VibeAppConfig, VibeBackupStrategy, VibeCancellationToken, VibeCapabilities,
+        VibeConnectionStatus, VibeEngine, VibeEngineConfig, VibeEngineConfigBuilder,
+        VibeEngineError, VibeEngineState, VibeError, VibeErrorCode, VibeErrorKind, VibeKvBucket,
+        VibeKvChange, VibeKvChangeKind, VibeKvListenerId, VibeKvStore, VibeKvTx, VibeKvValue,
+        VibeLogBackend, VibeLogConfig, VibeLogInfo, VibeLogLevel, VibeLogListener,
+        VibePlatformType, VibeResult, VibeRuntimeConfig, VibeStoreBackend, VibeStoreConfig,
+        VibeTableKeyVal, VibeTaskHandle, VibeTaskInfo, VibeTaskKind, VibeTaskPanel,
+        VibeTaskPriority, VibeTaskState,
+    };
+}
