@@ -15,14 +15,29 @@ pub struct VibeStatusManager {
 }
 
 impl VibeStatusManager {
+    /// Creates a status manager with the default connection status.
+    ///
+    /// # Returns
+    ///
+    /// A new [`VibeStatusManager`].
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Reads the current connection status.
+    ///
+    /// # Returns
+    ///
+    /// The current [`VibeConnectionStatus`].
     pub async fn get_connection_status(&self) -> VibeConnectionStatus {
         *self.conn_status.lock().await
     }
 
+    /// Sets or clears the listener called when connection status changes.
+    ///
+    /// # Returns
+    ///
+    /// This async method returns `()` after updating the listener slot.
     pub async fn set_connection_status_listener(
         &self,
         listener_opt: Option<ConnectionStatusListener>,
@@ -37,6 +52,12 @@ impl VibeStatusManager {
         }
     }
 
+    /// Transitions to a new connection status and notifies the listener.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(status)` when the transition is allowed, or [`VibeEngineError`] when
+    /// the status transition is invalid.
     pub async fn set_connection_status(
         &self,
         status: VibeConnectionStatus,
@@ -67,4 +88,13 @@ impl VibeStatusManager {
         }
         Ok(status)
     }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/status/status_manager_tests.rs"
+    ));
 }

@@ -1,6 +1,6 @@
 use crate::api::engine_config::VibeLogBackend;
 use crate::log::log_backend::VibeLogBackendHandle;
-use crate::log::log_def::{LogListener, LogType, VibeLogInfo};
+use crate::log::log_def::{LogListener, VibeLogInfo};
 use crate::log::log_level::LogLevel;
 use crate::platform;
 use crate::store::db::enums::db_error::VibeDbErrorInfo;
@@ -15,6 +15,10 @@ enum ChannelData {
     SetListener(Option<LogListener>),
 }
 
+/// Low-level logger that writes SDK log records and dispatches log listeners.
+///
+/// Most applications should use [`crate::VibeEngine::insert_log`] and
+/// [`crate::VibeEngine::set_log_listener`] instead of constructing this type.
 pub struct VibeLogger {
     db_log: Arc<VibeLogBackendHandle>,
     tx: Mutex<Option<Sender<ChannelData>>>,
@@ -24,6 +28,34 @@ pub struct VibeLogger {
 }
 
 impl VibeLogger {
+    /// Opens a logger using the selected backend and filtering behavior.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(VibeLogger)` when the backend opens, or [`VibeDbErrorInfo`] if the
+    /// log backend cannot be initialized.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use std::path::PathBuf;
+    /// use vibe_ready::{VibeLogBackend, VibeLogLevel, VibeLogger};
+    ///
+    /// # fn demo() -> Result<(), vibe_ready::VibeDbErrorInfo> {
+    /// let logger = VibeLogger::try_new(
+    ///     VibeLogBackend::Noop,
+    ///     PathBuf::from("/tmp/vibe-ready-log"),
+    ///     false,
+    ///     "demo:user".to_string(),
+    ///     VibeLogLevel::Info,
+    ///     false,
+    ///     true,
+    ///     1000,
+    /// )?;
+    /// logger.close()?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn try_new(
         backend: VibeLogBackend,
         store_path: PathBuf,
@@ -64,6 +96,11 @@ impl VibeLogger {
         })
     }
 
+    /// Registers this logger as the global receiver for the exported log macros.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `()` after installing the listener when possible.
     pub fn register_listener(&self) {
         let db_log_clone = self.db_log.clone();
         let write_to_store = self.write_to_store.load(Ordering::SeqCst);
@@ -75,11 +112,7 @@ impl VibeLogger {
             return;
         };
         VibeLogger::register_log_listener(Some(
-            move |_location: String,
-                  level: LogLevel,
-                  _log_type: LogType,
-                  tag: String,
-                  content: String| {
+            move |_location: String, level: LogLevel, tag: String, content: String| {
                 let create_time = platform::now();
                 let log_info =
                     VibeLogInfo::new(level, tag.to_string(), content.clone(), create_time);
@@ -93,6 +126,12 @@ impl VibeLogger {
         ));
     }
 
+    /// Inserts a log entry into the backend and listener pipeline.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `()`; closed loggers or channel failures are reported
+    /// to stderr.
     pub fn insert_log(
         &self,
         should_output_log: bool,
@@ -122,6 +161,11 @@ impl VibeLogger {
         }
     }
 
+    /// Sets the minimum severity delivered to the in-process listener.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `()` after queuing the filter change.
     pub fn set_filter(&self, level: LogLevel) {
         if let Ok(guard) = self.tx.lock() {
             if let Some(tx) = guard.as_ref() {
@@ -132,6 +176,11 @@ impl VibeLogger {
         }
     }
 
+    /// Sets or clears the in-process log listener.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `()` after queuing the listener change.
     pub fn set_log_listener(&self, listener: Option<LogListener>) {
         if self.is_close.load(Ordering::SeqCst) {
             eprintln!("VibeLogger has been released");
@@ -146,6 +195,12 @@ impl VibeLogger {
         }
     }
 
+    /// Closes the logger and its backing log store.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the logger is closed or already closed; [`VibeDbErrorInfo`]
+    /// if the backend close operation fails.
     pub fn close(&self) -> Result<(), VibeDbErrorInfo> {
         if self.is_close.swap(true, Ordering::SeqCst) {
             return Ok(());
@@ -158,4 +213,13 @@ impl VibeLogger {
         }
         self.db_log.close()
     }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/log/logger_tests.rs"
+    ));
 }

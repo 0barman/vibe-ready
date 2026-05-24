@@ -24,9 +24,13 @@ const DEFAULT_DESTROY_TIMEOUT: Duration = Duration::from_secs(5);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 /// Lifecycle state of a [`VibeEngine`].
 pub enum VibeEngineState {
+    /// The engine value has been constructed but is not accepting work yet.
     Created = 0,
+    /// The engine is ready to accept tasks and storage operations.
     Running = 1,
+    /// The engine is shutting down resources and no longer accepts new work.
     Closing = 2,
+    /// The engine has released its runtime-owned resources.
     Closed = 3,
 }
 
@@ -45,6 +49,7 @@ impl VibeEngineState {
 /// Main runtime facade for task execution, logging, and SDK context access.
 pub struct VibeEngine {
     executor: VibeEngineExecutor,
+    /// Shared engine context for advanced integrations that need low-level clients.
     pub ctx: Arc<VibeEngineContext>,
     state: Arc<AtomicU8>,
     destroy_lock: Arc<Mutex<()>>,
@@ -52,22 +57,123 @@ pub struct VibeEngine {
 }
 
 impl VibeEngine {
+    /// Returns compile-time capabilities enabled for this crate build.
+    ///
+    /// # Returns
+    ///
+    /// A [`VibeCapabilities`] snapshot describing enabled storage, logging,
+    /// and platform capabilities.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use vibe_ready::{VibeEngine, VibeEngineConfig, VibeResult};
+    ///
+    /// # fn demo() -> VibeResult<()> {
+    /// let engine = VibeEngine::create(VibeEngineConfig::builder().build())?;
+    /// let capabilities = engine.capabilities();
+    /// assert_eq!(capabilities.log_store, cfg!(feature = "log-diesel"));
+    /// # engine.destroy_with_timeout(std::time::Duration::from_secs(1))?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn capabilities(&self) -> VibeCapabilities {
         VibeCapabilities::current()
     }
 
+    /// Returns the current engine lifecycle state.
+    ///
+    /// # Returns
+    ///
+    /// A [`VibeEngineState`] value such as [`VibeEngineState::Running`] or
+    /// [`VibeEngineState::Closed`].
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use vibe_ready::{VibeEngine, VibeEngineConfig, VibeEngineState, VibeResult};
+    ///
+    /// # fn demo() -> VibeResult<()> {
+    /// let engine = VibeEngine::create(VibeEngineConfig::builder().build())?;
+    /// assert_eq!(engine.state(), VibeEngineState::Running);
+    /// # engine.destroy_with_timeout(std::time::Duration::from_secs(1))?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn state(&self) -> VibeEngineState {
         VibeEngineState::from_u8(self.state.load(Ordering::SeqCst))
     }
 
+    /// Clones the engine executor for advanced task and callback integrations.
+    ///
+    /// # Returns
+    ///
+    /// A cheap clone of [`VibeEngineExecutor`] sharing the engine runtime.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use vibe_ready::{VibeEngine, VibeEngineConfig, VibeResult};
+    ///
+    /// # fn demo() -> VibeResult<()> {
+    /// let engine = VibeEngine::create(VibeEngineConfig::builder().build())?;
+    /// let executor = engine.executor();
+    /// executor.post(async {})?;
+    /// # engine.destroy_with_timeout(std::time::Duration::from_secs(1))?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn executor(&self) -> VibeEngineExecutor {
         self.executor.clone()
     }
 
+    /// Creates a high-level key-value store facade bound to this engine.
+    ///
+    /// # Returns
+    ///
+    /// A [`VibeKvStore`] that performs blocking-friendly operations through
+    /// the engine executor.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use vibe_ready::{VibeEngine, VibeEngineConfig, VibeResult};
+    ///
+    /// # fn demo() -> VibeResult<()> {
+    /// let engine = VibeEngine::create(VibeEngineConfig::builder().build())?;
+    /// let store = engine.store();
+    /// store.set_str("theme", "dark")?;
+    /// # engine.destroy_with_timeout(std::time::Duration::from_secs(1))?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn store(&self) -> VibeKvStore {
         VibeKvStore::new(self.ctx.db_client().clone(), self.executor.clone())
     }
 
+    /// Runs a future on the engine runtime and waits for its result.
+    ///
+    /// Use this for short async operations where the caller needs the return
+    /// value synchronously.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(F)` with the future output, or [`VibeEngineError`] if the engine is
+    /// not running or the task cannot be delivered.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use vibe_ready::{VibeEngine, VibeEngineConfig, VibeResult};
+    ///
+    /// # fn demo() -> VibeResult<()> {
+    /// let engine = VibeEngine::create(VibeEngineConfig::builder().build())?;
+    /// let answer = engine.invoke(async { 42 })?;
+    /// assert_eq!(answer, 42);
+    /// # engine.destroy_with_timeout(std::time::Duration::from_secs(1))?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn invoke<T, F>(&self, future: T) -> Result<F, VibeEngineError>
     where
         T: Future<Output = F> + Send + 'static,
@@ -81,6 +187,29 @@ impl VibeEngine {
         self.executor.invoke(future)
     }
 
+    /// Posts a fire-and-forget future to the engine runtime.
+    ///
+    /// The method logs failures instead of returning them, making it suitable
+    /// for background work where the caller does not need a result.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `()`; delivery errors are written to the SDK log.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use vibe_ready::{VibeEngine, VibeEngineConfig, VibeResult};
+    ///
+    /// # fn demo() -> VibeResult<()> {
+    /// let engine = VibeEngine::create(VibeEngineConfig::builder().build())?;
+    /// engine.post(async {
+    ///     // perform background work here
+    /// });
+    /// # engine.destroy_with_timeout(std::time::Duration::from_secs(1))?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn post<T>(&self, future: T)
     where
         T: Future<Output = ()> + Send + 'static,
@@ -94,6 +223,25 @@ impl VibeEngine {
         }
     }
 
+    /// Wraps a one-argument callback so it runs on the engine callback pool.
+    ///
+    /// # Returns
+    ///
+    /// A `FnOnce(R)` wrapper that schedules `cb` on the callback thread pool.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use vibe_ready::{VibeEngine, VibeEngineConfig, VibeResult};
+    ///
+    /// # fn demo() -> VibeResult<()> {
+    /// let engine = VibeEngine::create(VibeEngineConfig::builder().build())?;
+    /// let callback = engine.cb_pool_once(|value: i32| assert_eq!(value, 7));
+    /// callback(7);
+    /// # engine.destroy_with_timeout(std::time::Duration::from_secs(1))?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn cb_pool_once<F, R>(&self, cb: F) -> impl FnOnce(R)
     where
         F: FnOnce(R) + Send + 'static,
@@ -102,6 +250,25 @@ impl VibeEngine {
         self.executor.callback().once(cb)
     }
 
+    /// Wraps a two-argument callback so it runs on the engine callback pool.
+    ///
+    /// # Returns
+    ///
+    /// A `FnOnce(R1, R2)` wrapper that schedules `cb` on the callback thread pool.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use vibe_ready::{VibeEngine, VibeEngineConfig, VibeResult};
+    ///
+    /// # fn demo() -> VibeResult<()> {
+    /// let engine = VibeEngine::create(VibeEngineConfig::builder().build())?;
+    /// let callback = engine.cb_pool_once2(|left: i32, right: i32| assert_eq!(left + right, 3));
+    /// callback(1, 2);
+    /// # engine.destroy_with_timeout(std::time::Duration::from_secs(1))?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn cb_pool_once2<F, R1, R2>(&self, cb: F) -> impl FnOnce(R1, R2)
     where
         F: FnOnce(R1, R2) + Send + 'static,
@@ -113,7 +280,7 @@ impl VibeEngine {
 }
 
 impl VibeEngine {
-    /// Posts a future to the dedicated priority lane (B9 task scheduler).
+    /// Posts a future to a dedicated priority lane.
     ///
     /// Tasks submitted to a higher priority lane run before lower-priority
     /// tasks queued at the same time. Returns a [`VibeTaskHandle`] that can
@@ -185,6 +352,23 @@ impl VibeEngine {
 
 impl VibeEngine {
     /// Creates an engine with a Tokio runtime owned by vibe-ready.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(VibeEngine)` when configuration is valid and storage/logging
+    /// backends open successfully, otherwise [`VibeEngineError`].
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use vibe_ready::{VibeEngine, VibeEngineConfig, VibeResult};
+    ///
+    /// # fn demo() -> VibeResult<()> {
+    /// let engine = VibeEngine::create(VibeEngineConfig::builder().app_name("demo").build())?;
+    /// engine.destroy_with_timeout(std::time::Duration::from_secs(1))?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn create(config: VibeEngineConfig) -> Result<Self, VibeEngineError> {
         config.validate()?;
         let runtime_config = config.runtime_config().clone();
@@ -204,6 +388,27 @@ impl VibeEngine {
     ///
     /// The host runtime must stay alive for the lifetime of the engine. Destroying
     /// the engine closes vibe-ready resources, but does not shut down this runtime.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(VibeEngine)` bound to `runtime_handle`, or [`VibeEngineError`] if
+    /// validation or backend initialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use vibe_ready::{VibeEngine, VibeEngineConfig, VibeResult};
+    ///
+    /// # fn demo() -> VibeResult<()> {
+    /// let runtime = tokio::runtime::Runtime::new().expect("create runtime");
+    /// let engine = VibeEngine::create_with_runtime_handle(
+    ///     VibeEngineConfig::builder().app_name("hosted").build(),
+    ///     runtime.handle().clone(),
+    /// )?;
+    /// engine.destroy_with_timeout(std::time::Duration::from_secs(1))?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn create_with_runtime_handle(
         config: VibeEngineConfig,
         runtime_handle: Handle,
@@ -274,6 +479,25 @@ impl VibeEngine {
         })
     }
 
+    /// Destroys the engine and waits up to `timeout` for resources to close.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when shutdown finishes or the engine is already closed;
+    /// [`VibeEngineError`] on timeout, runtime, or backend close failures.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use std::time::Duration;
+    /// use vibe_ready::{VibeEngine, VibeEngineConfig, VibeResult};
+    ///
+    /// # fn demo() -> VibeResult<()> {
+    /// let engine = VibeEngine::create(VibeEngineConfig::builder().build())?;
+    /// engine.destroy_with_timeout(Duration::from_secs(2))?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn destroy_with_timeout(&self, timeout: Duration) -> Result<(), VibeEngineError> {
         let _guard = self
             .destroy_lock
@@ -316,6 +540,26 @@ impl VibeEngine {
             .ok_or_else(|| VibeEngineError::from_error_code(VibeEngineErrorCode::TimeoutError))
     }
 
+    /// Destroys the engine using the default timeout and reports through a callback.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `()` immediately after invoking `cb` on the callback
+    /// pool with `Result<(), VibeEngineError>`.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use vibe_ready::{VibeEngine, VibeEngineConfig, VibeResult};
+    ///
+    /// # fn demo() -> VibeResult<()> {
+    /// let engine = VibeEngine::create(VibeEngineConfig::builder().build())?;
+    /// engine.destroy(|result| {
+    ///     let _ = result;
+    /// });
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn destroy<CB>(&self, cb: CB)
     where
         CB: FnOnce(Result<(), VibeEngineError>) + Send + 'static,
@@ -329,7 +573,25 @@ impl VibeEngine {
 }
 
 impl VibeEngine {
-    /// level   [LogLevel]
+    /// Inserts a log record into the configured log backend.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `()`; backend write failures are handled by the log
+    /// subsystem.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use vibe_ready::{VibeEngine, VibeEngineConfig, VibeLogLevel, VibeResult};
+    ///
+    /// # fn demo() -> VibeResult<()> {
+    /// let engine = VibeEngine::create(VibeEngineConfig::builder().build())?;
+    /// engine.insert_log(true, VibeLogLevel::Info, "startup".into(), "ready".into());
+    /// # engine.destroy_with_timeout(std::time::Duration::from_secs(1))?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn insert_log(
         &self,
         should_output_log: bool,
@@ -345,6 +607,28 @@ impl VibeEngine {
 }
 
 impl VibeEngine {
+    /// Sets or clears the listener that receives emitted log entries.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `()` and schedules listener installation on the
+    /// engine runtime.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use vibe_ready::{VibeEngine, VibeEngineConfig, VibeResult};
+    ///
+    /// # fn demo() -> VibeResult<()> {
+    /// let engine = VibeEngine::create(VibeEngineConfig::builder().build())?;
+    /// engine.set_log_listener(Some(Box::new(|info| {
+    ///     let _ = info;
+    /// })));
+    /// engine.set_log_listener(None);
+    /// # engine.destroy_with_timeout(std::time::Duration::from_secs(1))?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn set_log_listener(&self, listener: Option<LogListener>) {
         let ctx = self.ctx.clone();
         self.post(async move {
@@ -416,9 +700,10 @@ mod tests {
         engine.post(async move {
             let _ = tx.send(7);
         });
-        let received = rx
-            .recv_timeout(Duration::from_secs(2))
-            .map_err(|err| VibeEngineError::from_error_code(VibeEngineErrorCode::TimeoutError).with_source(err.to_string()))?;
+        let received = rx.recv_timeout(Duration::from_secs(2)).map_err(|err| {
+            VibeEngineError::from_error_code(VibeEngineErrorCode::TimeoutError)
+                .with_source(err.to_string())
+        })?;
         assert_eq!(received, 7);
 
         engine.destroy_with_timeout(Duration::from_secs(2))?;
@@ -453,16 +738,13 @@ mod tests {
         let engine = VibeEngine::create(build_scheduler_config("periodic-cancel"))?;
         let counter = Arc::new(AtomicUsize::new(0));
         let counter_clone = Arc::clone(&counter);
-        let handle = engine.schedule_every(
-            "periodic.tick",
-            Duration::from_millis(20),
-            move |_token| {
+        let handle =
+            engine.schedule_every("periodic.tick", Duration::from_millis(20), move |_token| {
                 let c = Arc::clone(&counter_clone);
                 async move {
                     c.fetch_add(1, Ordering::SeqCst);
                 }
-            },
-        )?;
+            })?;
         std::thread::sleep(Duration::from_millis(120));
         let runs_before_destroy = counter.load(Ordering::SeqCst);
         assert!(runs_before_destroy >= 2, "periodic should have ticked");
@@ -523,10 +805,12 @@ mod tests {
         let high_idx = high_marker
             .lock()
             .map_err(|_| VibeEngineError::from_error_code(VibeEngineErrorCode::RuntimeError))?
-            .ok_or_else(|| VibeEngineError::from_error_code_msg(
-                VibeEngineErrorCode::TimeoutError,
-                "high task did not run".to_string(),
-            ))?;
+            .ok_or_else(|| {
+                VibeEngineError::from_error_code_msg(
+                    VibeEngineErrorCode::TimeoutError,
+                    "high task did not run".to_string(),
+                )
+            })?;
         assert!(
             (high_idx as usize) < 15,
             "high-priority task ran at index {high_idx}, expected to overtake majority of normal tasks"
@@ -601,4 +885,13 @@ mod tests {
         engine.destroy_with_timeout(Duration::from_secs(2))?;
         Ok(())
     }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/api/engine_tests.rs"
+    ));
 }

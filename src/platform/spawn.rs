@@ -15,10 +15,33 @@ use wasm_bindgen_futures::spawn_local;
 // }
 
 #[cfg(not(target_arch = "wasm32"))]
+/// Spawns a future on the current Tokio runtime.
+///
+/// # Returns
+///
+/// A [`tokio::task::JoinHandle`] that can be awaited for the future output.
+///
+/// # Examples
+///
+/// ```no_run
+/// # async fn demo() {
+/// let handle = vibe_ready::platform::spawn(async { 7 });
+/// assert_eq!(handle.await.expect("task joins"), 7);
+/// # }
+/// ```
 pub fn spawn<T>(future: T) -> JoinHandle<T::Output>
 where
     T: Future + Send + 'static,
     T::Output: Send + 'static,
 {
     tokio::spawn(future)
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/platform/spawn_tests.rs"
+    ));
 }

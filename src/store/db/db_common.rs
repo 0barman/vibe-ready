@@ -1,4 +1,4 @@
-use crate::log_db_s;
+use crate::log_s;
 use crate::store::db::enums::db_error::VibeDbErrorInfo;
 use std::fs;
 use std::path::PathBuf;
@@ -25,11 +25,20 @@ pub fn get_db_name_pwd(
         store_path.push(db_name);
         // let password = format!("{:x}", md5::compute(key.as_bytes()));
         let password = format!("pwd{}{}", user_id, user_id);
-        log_db_s!("db_common", "store_path_str", store_path.clone());
+        log_s!("db_common", "store_path_str", store_path.clone());
         Ok((store_path, password.to_string()))
     } else {
         store_path.push(db_name);
-        log_db_s!("db_common", "store_path_str", store_path.clone());
+        log_s!("db_common", "store_path_str", store_path.clone());
         Ok((store_path, "".to_string()))
     }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/store/db_common_tests.rs"
+    ));
 }

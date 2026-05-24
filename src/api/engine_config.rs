@@ -16,12 +16,19 @@ const DEFAULT_PRIORITY_QUEUE_CAPACITY: usize = 1024;
 /// Configuration used when creating a [`crate::VibeEngine`].
 #[derive(Clone, Debug)]
 pub struct VibeEngineConfig {
+    /// Platform identifier used by integrations and logs.
     pub platform_type: VibePlatformType,
+    /// Root directory where vibe-ready stores app data.
     pub store_root_path: PathBuf,
+    /// Whether persistent stores should use encryption when supported.
     pub is_encrypt: bool,
+    /// Application identity used for namespacing local data.
     pub app: VibeAppConfig,
+    /// Logging backend and retention configuration.
     pub log: VibeLogConfig,
+    /// Work-store backend and storage configuration.
     pub store: VibeStoreConfig,
+    /// Runtime worker and queue configuration.
     pub runtime: VibeRuntimeConfig,
 }
 
@@ -39,56 +46,77 @@ pub struct VibeEngineConfigBuilder {
 /// Application identity used to isolate SDK data on disk.
 #[derive(Clone, Debug)]
 pub struct VibeAppConfig {
+    /// Application name used as the final data-directory segment.
     pub app_name: String,
+    /// Namespace used to separate environments, tenants, or products.
     pub namespace: String,
 }
 
 /// Logging behavior used by the SDK.
 #[derive(Clone, Debug)]
 pub struct VibeLogConfig {
+    /// Backend used to persist log entries.
     pub backend: VibeLogBackend,
+    /// Minimum level emitted by the logger.
     pub level: LogLevel,
+    /// Whether logs should be written to the selected store backend.
     pub write_to_store: bool,
+    /// Whether logs should also be printed to stdout.
     pub output_stdout: bool,
+    /// Number of days log data should be retained by supported backends.
     pub retention_days: u32,
+    /// Maximum rows retained by supported log backends.
     pub max_rows: usize,
 }
 
 /// Log backend selected for SDK log persistence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VibeLogBackend {
+    /// Disable persistent logging while keeping in-process callbacks available.
     Noop,
+    /// Persist logs through Diesel using SQLite.
     DieselSqlite,
 }
 
 /// Store backend selected for SDK persistence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VibeStoreBackend {
+    /// Disable persistent key-value storage.
     Noop,
+    /// Persist key-value data through Diesel using SQLite.
     DieselSqlite,
 }
 
 /// Backup behavior for SDK managed storage.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VibeBackupStrategy {
+    /// Do not create SDK-managed backups.
     Disabled,
+    /// Reserve backup operations for explicit application control.
     Manual,
 }
 
 /// Storage behavior used by the SDK.
 #[derive(Clone, Debug)]
 pub struct VibeStoreConfig {
+    /// Backend used for work/key-value persistence.
     pub backend: VibeStoreBackend,
+    /// Whether storage encryption should be requested when supported.
     pub encrypt: bool,
+    /// Backup behavior for SDK-managed storage.
     pub backup_strategy: VibeBackupStrategy,
 }
 
 /// Runtime sizing and queue capacity used by [`crate::VibeEngine`].
 #[derive(Clone, Debug)]
 pub struct VibeRuntimeConfig {
+    /// Number of Tokio worker threads for the engine-owned runtime.
     pub worker_threads: usize,
+    /// Number of threads used for callback dispatch.
     pub callback_threads: usize,
+    /// Capacity of the fire-and-forget async task queue.
     pub async_queue_capacity: usize,
+    /// Capacity of the synchronous invoke queue.
     pub sync_queue_capacity: usize,
     /// Capacity per priority lane used by the B9 task scheduler
     /// (high / normal / low). Each lane is sized identically.
@@ -96,6 +124,25 @@ pub struct VibeRuntimeConfig {
 }
 
 impl VibeEngineConfig {
+    /// Starts building a [`VibeEngineConfig`] with production-ready defaults.
+    ///
+    /// # Returns
+    ///
+    /// A [`VibeEngineConfigBuilder`] that can be customized before calling
+    /// [`VibeEngineConfigBuilder::build`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vibe_ready::{VibeEngineConfig, VibePlatformType};
+    ///
+    /// let config = VibeEngineConfig::builder()
+    ///     .platform(VibePlatformType::MacOS)
+    ///     .app_name("demo")
+    ///     .namespace("examples")
+    ///     .build();
+    /// assert_eq!(config.app_name(), "demo");
+    /// ```
     pub fn builder() -> VibeEngineConfigBuilder {
         VibeEngineConfigBuilder {
             platform_type: Default::default(),
@@ -107,44 +154,109 @@ impl VibeEngineConfig {
         }
     }
 
+    /// Returns the configured root directory for SDK data.
+    ///
+    /// # Returns
+    ///
+    /// A borrowed [`PathBuf`] pointing to the storage root.
     pub fn store_path(&self) -> &PathBuf {
         &self.store_root_path
     }
 
+    /// Returns whether storage encryption was requested.
+    ///
+    /// # Returns
+    ///
+    /// `true` when encryption is enabled in the store configuration.
     pub fn is_encrypt(&self) -> bool {
         self.is_encrypt
     }
 
+    /// Returns the configured platform identifier.
+    ///
+    /// # Returns
+    ///
+    /// The [`VibePlatformType`] stored in this configuration.
     pub fn platform(&self) -> VibePlatformType {
         self.platform_type
     }
 
+    /// Returns the application name used for data isolation.
+    ///
+    /// # Returns
+    ///
+    /// A borrowed application name string.
     pub fn app_name(&self) -> &str {
         &self.app.app_name
     }
 
+    /// Returns the namespace used for data isolation.
+    ///
+    /// # Returns
+    ///
+    /// A borrowed namespace string.
     pub fn namespace(&self) -> &str {
         &self.app.namespace
     }
 
+    /// Returns the logging configuration.
+    ///
+    /// # Returns
+    ///
+    /// A borrowed [`VibeLogConfig`].
     pub fn log_config(&self) -> &VibeLogConfig {
         &self.log
     }
 
+    /// Returns the storage configuration.
+    ///
+    /// # Returns
+    ///
+    /// A borrowed [`VibeStoreConfig`].
     pub fn store_config(&self) -> &VibeStoreConfig {
         &self.store
     }
 
+    /// Returns the runtime configuration.
+    ///
+    /// # Returns
+    ///
+    /// A borrowed [`VibeRuntimeConfig`].
     pub fn runtime_config(&self) -> &VibeRuntimeConfig {
         &self.runtime
     }
 
+    /// Builds the app-specific storage directory path.
+    ///
+    /// # Returns
+    ///
+    /// `store_root_path / namespace / app_name` as a [`PathBuf`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    /// use vibe_ready::VibeEngineConfig;
+    ///
+    /// let config = VibeEngineConfig::builder()
+    ///     .store_root_path("/tmp/vibe-ready")
+    ///     .namespace("dev")
+    ///     .app_name("app")
+    ///     .build();
+    /// assert_eq!(config.app_store_path(), PathBuf::from("/tmp/vibe-ready/dev/app"));
+    /// ```
     pub fn app_store_path(&self) -> PathBuf {
         self.store_root_path
             .join(&self.app.namespace)
             .join(&self.app.app_name)
     }
 
+    /// Validates identifiers, backend availability, and runtime capacities.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the configuration can be used to create an engine, or
+    /// [`VibeEngineError`] with configuration context when invalid.
     pub fn validate(&self) -> Result<(), VibeEngineError> {
         validate_identifier("app_name", &self.app.app_name)?;
         validate_identifier("namespace", &self.app.namespace)?;
@@ -212,96 +324,191 @@ impl fmt::Display for VibeEngineConfig {
 }
 
 impl VibeEngineConfigBuilder {
+    /// Sets the host platform identifier.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn platform(mut self, platform: VibePlatformType) -> Self {
         self.platform_type = platform;
         self
     }
 
+    /// Sets the root directory used for SDK data.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn store_root_path(mut self, path: impl AsRef<Path>) -> Self {
         self.store_root_path = path.as_ref().to_path_buf();
         self
     }
 
+    /// Sets the application name.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn app_name(mut self, app_name: impl Into<String>) -> Self {
         self.app.app_name = app_name.into();
         self
     }
 
+    /// Sets the namespace used to isolate data.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn namespace(mut self, namespace: impl Into<String>) -> Self {
         self.app.namespace = namespace.into();
         self
     }
 
+    /// Replaces the full application configuration.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn app_config(mut self, app: VibeAppConfig) -> Self {
         self.app = app;
         self
     }
 
+    /// Replaces the full logging configuration.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn log_config(mut self, log: VibeLogConfig) -> Self {
         self.log = log;
         self
     }
 
+    /// Sets the logging backend.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn log_backend(mut self, backend: VibeLogBackend) -> Self {
         self.log.backend = backend;
         self
     }
 
+    /// Sets the logging level.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn log_level(mut self, level: LogLevel) -> Self {
         self.log.level = level;
         self
     }
 
+    /// Enables or disables log persistence.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn log_write_to_store(mut self, write_to_store: bool) -> Self {
         self.log.write_to_store = write_to_store;
         self
     }
 
+    /// Enables or disables stdout logging.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn log_output_stdout(mut self, output_stdout: bool) -> Self {
         self.log.output_stdout = output_stdout;
         self
     }
 
+    /// Sets log retention in days for supported backends.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn log_retention_days(mut self, retention_days: u32) -> Self {
         self.log.retention_days = retention_days;
         self
     }
 
+    /// Sets the maximum retained log rows for supported backends.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn log_max_rows(mut self, max_rows: usize) -> Self {
         self.log.max_rows = max_rows;
         self
     }
 
+    /// Replaces the full storage configuration.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn store_config(mut self, store: VibeStoreConfig) -> Self {
         self.store = store;
         self
     }
 
+    /// Sets the key-value store backend.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn store_backend(mut self, backend: VibeStoreBackend) -> Self {
         self.store.backend = backend;
         self
     }
 
+    /// Sets the backup strategy for SDK-managed storage.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn backup_strategy(mut self, backup_strategy: VibeBackupStrategy) -> Self {
         self.store.backup_strategy = backup_strategy;
         self
     }
 
+    /// Replaces the full runtime configuration.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn runtime_config(mut self, runtime: VibeRuntimeConfig) -> Self {
         self.runtime = runtime;
         self
     }
 
+    /// Sets the Tokio worker-thread count for an engine-owned runtime.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn runtime_worker_threads(mut self, worker_threads: usize) -> Self {
         self.runtime.worker_threads = worker_threads;
         self
     }
 
+    /// Sets the callback thread-pool size.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn callback_threads(mut self, callback_threads: usize) -> Self {
         self.runtime.callback_threads = callback_threads;
         self
     }
 
+    /// Sets async and sync queue capacities.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn queue_capacity(
         mut self,
         async_queue_capacity: usize,
@@ -312,16 +519,32 @@ impl VibeEngineConfigBuilder {
         self
     }
 
+    /// Sets the per-lane priority queue capacity.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn priority_queue_capacity(mut self, capacity: usize) -> Self {
         self.runtime.priority_queue_capacity = capacity;
         self
     }
 
+    /// Enables or disables storage encryption when supported by the backend.
+    ///
+    /// # Returns
+    ///
+    /// The updated builder.
     pub fn encrypt(mut self, encrypt: bool) -> Self {
         self.store.encrypt = encrypt;
         self
     }
 
+    /// Finalizes the builder into a [`VibeEngineConfig`].
+    ///
+    /// # Returns
+    ///
+    /// The completed configuration. Call [`VibeEngineConfig::validate`] or
+    /// [`crate::VibeEngine::create`] to validate it.
     pub fn build(self) -> VibeEngineConfig {
         VibeEngineConfig {
             platform_type: self.platform_type,
@@ -415,12 +638,13 @@ fn default_store_backend() -> VibeStoreBackend {
 }
 
 fn validate_identifier(field: &str, value: &str) -> Result<(), VibeEngineError> {
-    if value.trim().is_empty() {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
         return Err(config_error(format!("{field} must not be empty")));
     }
-    if value.contains('/') || value.contains('\\') || value.contains("..") {
+    if trimmed == "." || value.contains('/') || value.contains('\\') || value.contains("..") {
         return Err(config_error(format!(
-            "{field} must not contain path separators or '..'"
+            "{field} must not contain path separators, '.', or '..'"
         )));
     }
     Ok(())
@@ -517,4 +741,13 @@ mod tests {
             VibeEngineErrorCode::ConfigError.code()
         );
     }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/api/engine_config_tests.rs"
+    ));
 }

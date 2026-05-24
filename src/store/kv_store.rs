@@ -13,15 +13,22 @@ use std::time::Duration;
 /// registered via [`VibeKvStore::on_change`] / [`VibeKvBucket::on_change`].
 #[derive(Debug, Clone)]
 pub struct VibeKvChange {
+    /// Bucket where the change occurred.
     pub bucket: String,
+    /// Key that changed.
     pub key: String,
+    /// Operation that produced the change.
     pub kind: VibeKvChangeKind,
+    /// New value for set operations, or `None` for removals.
     pub value: Option<VibeKvValue>,
 }
 
+/// Operation kind delivered by KV change listeners.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VibeKvChangeKind {
+    /// A key was set or replaced.
     Set,
+    /// A key was removed.
     Remove,
 }
 
@@ -121,6 +128,23 @@ impl VibeKvStore {
     }
 
     /// Returns a handle scoped to `name` so all reads/writes target that bucket.
+    ///
+    /// # Returns
+    ///
+    /// A [`VibeKvBucket`] that shares this store and prefixes operations with `name`.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use vibe_ready::{VibeEngine, VibeEngineConfig, VibeResult};
+    /// # fn demo() -> VibeResult<()> {
+    /// let engine = VibeEngine::create(VibeEngineConfig::builder().build())?;
+    /// let settings = engine.store().bucket("settings");
+    /// settings.set("theme", "dark")?;
+    /// # engine.destroy_with_timeout(std::time::Duration::from_secs(1))?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn bucket(&self, name: impl Into<String>) -> VibeKvBucket {
         VibeKvBucket {
             store: self.clone(),
@@ -140,6 +164,12 @@ impl VibeKvStore {
         }
     }
 
+    /// Stores a value in the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the value is written, or [`VibeEngineError`] on validation
+    /// or backend failure.
     pub fn set(
         &self,
         key: impl AsRef<str>,
@@ -150,6 +180,10 @@ impl VibeKvStore {
 
     /// Store `value` with a time-to-live. The key is treated as missing once
     /// `ttl` has elapsed.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the value is written with an expiry timestamp.
     pub fn set_with_ttl(
         &self,
         key: impl AsRef<str>,
@@ -188,6 +222,11 @@ impl VibeKvStore {
         Ok(())
     }
 
+    /// Stores a string value in the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the string is written.
     pub fn set_str(
         &self,
         key: impl AsRef<str>,
@@ -196,21 +235,60 @@ impl VibeKvStore {
         self.set(key, VibeKvValue::String(value.as_ref().to_string()))
     }
 
+    /// Stores a boolean value in the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the boolean is written.
     pub fn set_bool(&self, key: impl AsRef<str>, value: bool) -> Result<(), VibeEngineError> {
         self.set(key, VibeKvValue::Bool(value))
     }
 
+    /// Stores a 32-bit integer value in the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the integer is written.
     pub fn set_i32(&self, key: impl AsRef<str>, value: i32) -> Result<(), VibeEngineError> {
         self.set(key, VibeKvValue::I32(value))
     }
 
+    /// Reads a value from the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(Some(value))` when the key exists and has not expired, `Ok(None)`
+    /// when it is missing, or [`VibeEngineError`] on backend failure.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use vibe_ready::{VibeEngine, VibeEngineConfig, VibeKvValue, VibeResult};
+    /// # fn demo() -> VibeResult<()> {
+    /// let engine = VibeEngine::create(VibeEngineConfig::builder().build())?;
+    /// let store = engine.store();
+    /// store.set("count", 3_i32)?;
+    /// assert_eq!(store.get("count")?, Some(VibeKvValue::I32(3)));
+    /// # engine.destroy_with_timeout(std::time::Duration::from_secs(1))?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn get(&self, key: impl AsRef<str>) -> Result<Option<VibeKvValue>, VibeEngineError> {
         let key = key.as_ref().to_string();
         let db_client = self.db_client.clone();
-        self.executor
-            .invoke(async move { db_client.get_in_bucket(DEFAULT_BUCKET.to_string(), key).await })?
+        self.executor.invoke(async move {
+            db_client
+                .get_in_bucket(DEFAULT_BUCKET.to_string(), key)
+                .await
+        })?
     }
 
+    /// Reads a string value from the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(Some(String))` only when the stored value is a string; other value
+    /// types and missing keys return `Ok(None)`.
     pub fn get_str(&self, key: impl AsRef<str>) -> Result<Option<String>, VibeEngineError> {
         Ok(self.get(key)?.and_then(|v| match v {
             VibeKvValue::String(s) => Some(s),
@@ -218,6 +296,11 @@ impl VibeKvStore {
         }))
     }
 
+    /// Reads a boolean value from the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(Some(bool))` only when the stored value is a boolean.
     pub fn get_bool(&self, key: impl AsRef<str>) -> Result<Option<bool>, VibeEngineError> {
         Ok(self.get(key)?.and_then(|v| match v {
             VibeKvValue::Bool(b) => Some(b),
@@ -225,6 +308,11 @@ impl VibeKvStore {
         }))
     }
 
+    /// Reads a 32-bit integer value from the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(Some(i32))` only when the stored value is an `i32`.
     pub fn get_i32(&self, key: impl AsRef<str>) -> Result<Option<i32>, VibeEngineError> {
         Ok(self.get(key)?.and_then(|v| match v {
             VibeKvValue::I32(i) => Some(i),
@@ -232,6 +320,11 @@ impl VibeKvStore {
         }))
     }
 
+    /// Removes a key from the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` when a row was removed, `Ok(false)` when it did not exist.
     pub fn remove(&self, key: impl AsRef<str>) -> Result<bool, VibeEngineError> {
         let key_owned = key.as_ref().to_string();
         let db_client = self.db_client.clone();
@@ -252,6 +345,11 @@ impl VibeKvStore {
         Ok(removed)
     }
 
+    /// Checks whether a key exists and is not expired in the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` when the key exists, `Ok(false)` when it is missing or expired.
     pub fn contains(&self, key: impl AsRef<str>) -> Result<bool, VibeEngineError> {
         let key = key.as_ref().to_string();
         let db_client = self.db_client.clone();
@@ -262,6 +360,11 @@ impl VibeKvStore {
         })?
     }
 
+    /// Lists keys currently stored in the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// A vector of key names returned by the configured backend.
     pub fn list_keys(&self) -> Result<Vec<String>, VibeEngineError> {
         let db_client = self.db_client.clone();
         self.executor.invoke(async move {
@@ -273,6 +376,10 @@ impl VibeKvStore {
 
     /// Batch set on the default bucket. All writes happen in a single DB
     /// transaction; failures roll the whole batch back.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when all values are written atomically.
     pub fn set_many<K, V>(&self, items: Vec<(K, V)>) -> Result<(), VibeEngineError>
     where
         K: AsRef<str>,
@@ -281,16 +388,23 @@ impl VibeKvStore {
         self.bucket(DEFAULT_BUCKET).set_many(items)
     }
 
-    pub fn get_many<K>(
-        &self,
-        keys: Vec<K>,
-    ) -> Result<Vec<(String, VibeKvValue)>, VibeEngineError>
+    /// Reads multiple keys from the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// A vector of `(key, value)` pairs for keys that exist and are not expired.
+    pub fn get_many<K>(&self, keys: Vec<K>) -> Result<Vec<(String, VibeKvValue)>, VibeEngineError>
     where
         K: AsRef<str>,
     {
         self.bucket(DEFAULT_BUCKET).get_many(keys)
     }
 
+    /// Removes multiple keys from the default bucket in one transaction.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the remove operations have been applied.
     pub fn remove_many<K>(&self, keys: Vec<K>) -> Result<(), VibeEngineError>
     where
         K: AsRef<str>,
@@ -301,6 +415,26 @@ impl VibeKvStore {
     /// Run a closure that buffers a batch of `set`/`remove` operations and
     /// commits them in a single transaction. Returning `Err` from the closure
     /// (or any DB failure during commit) rolls every buffered op back.
+    ///
+    /// # Returns
+    ///
+    /// The value returned by the closure when commit succeeds.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use vibe_ready::{VibeEngine, VibeEngineConfig, VibeResult};
+    /// # fn demo() -> VibeResult<()> {
+    /// let engine = VibeEngine::create(VibeEngineConfig::builder().build())?;
+    /// let changed = engine.store().transaction(|tx| {
+    ///     tx.set("name", "vibe")?.remove("old-name")?;
+    ///     Ok(2)
+    /// })?;
+    /// assert_eq!(changed, 2);
+    /// # engine.destroy_with_timeout(std::time::Duration::from_secs(1))?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn transaction<F, T>(&self, f: F) -> Result<T, VibeEngineError>
     where
         F: FnOnce(&mut VibeKvTx) -> Result<T, VibeEngineError>,
@@ -355,11 +489,11 @@ impl VibeKvStore {
 
     /// Register a listener for changes whose key matches `pattern` in the
     /// default bucket. Pattern is exact-match, `*`, or `prefix*`.
-    pub fn on_change<F>(
-        &self,
-        pattern: impl Into<String>,
-        listener: F,
-    ) -> VibeKvListenerId
+    ///
+    /// # Returns
+    ///
+    /// A [`VibeKvListenerId`] that can be passed to [`VibeKvStore::off_change`].
+    pub fn on_change<F>(&self, pattern: impl Into<String>, listener: F) -> VibeKvListenerId
     where
         F: Fn(&VibeKvChange) + Send + Sync + 'static,
     {
@@ -371,11 +505,19 @@ impl VibeKvStore {
     }
 
     /// Unregister a listener previously returned by `on_change`.
+    ///
+    /// # Returns
+    ///
+    /// `true` when a listener was removed, otherwise `false`.
     pub fn off_change(&self, id: VibeKvListenerId) -> bool {
         self.listeners.remove(id)
     }
 
     /// Eagerly purge expired rows from the underlying store.
+    ///
+    /// # Returns
+    ///
+    /// The number of rows removed by the backend.
     pub fn purge_expired(&self) -> Result<usize, VibeEngineError> {
         let db_client = self.db_client.clone();
         self.executor
@@ -391,10 +533,20 @@ pub struct VibeKvBucket {
 }
 
 impl VibeKvBucket {
+    /// Returns this bucket's name.
+    ///
+    /// # Returns
+    ///
+    /// A borrowed bucket name.
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// Stores a value in this bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the value is written.
     pub fn set(
         &self,
         key: impl AsRef<str>,
@@ -403,6 +555,11 @@ impl VibeKvBucket {
         self.store.set_in_bucket(&self.name, key, value, None)
     }
 
+    /// Stores a value in this bucket with a time-to-live.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the value is written with an expiry timestamp.
     pub fn set_with_ttl(
         &self,
         key: impl AsRef<str>,
@@ -412,6 +569,11 @@ impl VibeKvBucket {
         self.store.set_in_bucket(&self.name, key, value, Some(ttl))
     }
 
+    /// Reads a value from this bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(Some(value))`, `Ok(None)` for missing/expired keys, or an error.
     pub fn get(&self, key: impl AsRef<str>) -> Result<Option<VibeKvValue>, VibeEngineError> {
         let bucket = self.name.clone();
         let key = key.as_ref().to_string();
@@ -421,6 +583,11 @@ impl VibeKvBucket {
             .invoke(async move { db_client.get_in_bucket(bucket, key).await })?
     }
 
+    /// Removes a key from this bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` when the key existed and was removed.
     pub fn remove(&self, key: impl AsRef<str>) -> Result<bool, VibeEngineError> {
         let bucket = self.name.clone();
         let key_owned = key.as_ref().to_string();
@@ -443,6 +610,11 @@ impl VibeKvBucket {
         Ok(removed)
     }
 
+    /// Checks whether a key exists and is not expired in this bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` when the key exists.
     pub fn contains(&self, key: impl AsRef<str>) -> Result<bool, VibeEngineError> {
         let bucket = self.name.clone();
         let key = key.as_ref().to_string();
@@ -452,6 +624,11 @@ impl VibeKvBucket {
             .invoke(async move { db_client.contains_in_bucket(bucket, key).await })?
     }
 
+    /// Lists keys in this bucket.
+    ///
+    /// # Returns
+    ///
+    /// A vector of key names returned by the backend.
     pub fn list_keys(&self) -> Result<Vec<String>, VibeEngineError> {
         let bucket = self.name.clone();
         let db_client = self.store.db_client.clone();
@@ -460,6 +637,11 @@ impl VibeKvBucket {
             .invoke(async move { db_client.list_keys_in_bucket(bucket).await })?
     }
 
+    /// Stores multiple values in this bucket in one transaction.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when all values are written atomically.
     pub fn set_many<K, V>(&self, items: Vec<(K, V)>) -> Result<(), VibeEngineError>
     where
         K: AsRef<str>,
@@ -473,9 +655,9 @@ impl VibeKvBucket {
         let db_client = self.store.db_client.clone();
         let owned_for_dispatch = owned.clone();
         let bucket_for_call = bucket.clone();
-        self.store.executor.invoke(async move {
-            db_client.set_many_in_bucket(bucket_for_call, owned).await
-        })??;
+        self.store
+            .executor
+            .invoke(async move { db_client.set_many_in_bucket(bucket_for_call, owned).await })??;
         for (k, v, _) in owned_for_dispatch {
             self.store.dispatch(VibeKvChange {
                 bucket: bucket.clone(),
@@ -487,10 +669,12 @@ impl VibeKvBucket {
         Ok(())
     }
 
-    pub fn get_many<K>(
-        &self,
-        keys: Vec<K>,
-    ) -> Result<Vec<(String, VibeKvValue)>, VibeEngineError>
+    /// Reads multiple keys from this bucket.
+    ///
+    /// # Returns
+    ///
+    /// A vector of `(key, value)` pairs for existing, non-expired keys.
+    pub fn get_many<K>(&self, keys: Vec<K>) -> Result<Vec<(String, VibeKvValue)>, VibeEngineError>
     where
         K: AsRef<str>,
     {
@@ -502,6 +686,11 @@ impl VibeKvBucket {
             .invoke(async move { db_client.get_many_in_bucket(bucket, keys_owned).await })?
     }
 
+    /// Removes multiple keys from this bucket in one transaction.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when remove operations have been applied.
     pub fn remove_many<K>(&self, keys: Vec<K>) -> Result<(), VibeEngineError>
     where
         K: AsRef<str>,
@@ -527,6 +716,11 @@ impl VibeKvBucket {
         Ok(())
     }
 
+    /// Runs a bucket-scoped transaction.
+    ///
+    /// # Returns
+    ///
+    /// The value returned by the closure when commit succeeds.
     pub fn transaction<F, T>(&self, f: F) -> Result<T, VibeEngineError>
     where
         F: FnOnce(&mut VibeKvTx) -> Result<T, VibeEngineError>,
@@ -536,8 +730,7 @@ impl VibeKvBucket {
         let bucket = tx.bucket.clone();
         let mut changes = Vec::new();
         let mut ops = Vec::with_capacity(tx.ops.len());
-        let user_id =
-            current_user_id_blocking(&self.store.db_client, &self.store.executor)?;
+        let user_id = current_user_id_blocking(&self.store.db_client, &self.store.executor)?;
         for op in tx.ops.drain(..) {
             match op {
                 BufferedOp::Set { key, value, ttl } => {
@@ -581,21 +774,25 @@ impl VibeKvBucket {
         Ok(outcome)
     }
 
-    pub fn on_change<F>(
-        &self,
-        pattern: impl Into<String>,
-        listener: F,
-    ) -> VibeKvListenerId
+    /// Registers a listener for matching keys in this bucket.
+    ///
+    /// # Returns
+    ///
+    /// A listener id that can be passed to [`VibeKvBucket::off_change`].
+    pub fn on_change<F>(&self, pattern: impl Into<String>, listener: F) -> VibeKvListenerId
     where
         F: Fn(&VibeKvChange) + Send + Sync + 'static,
     {
-        self.store.listeners.add(
-            Some(self.name.clone()),
-            pattern.into(),
-            Arc::new(listener),
-        )
+        self.store
+            .listeners
+            .add(Some(self.name.clone()), pattern.into(), Arc::new(listener))
     }
 
+    /// Unregisters a bucket listener.
+    ///
+    /// # Returns
+    ///
+    /// `true` when a listener was removed.
     pub fn off_change(&self, id: VibeKvListenerId) -> bool {
         self.store.listeners.remove(id)
     }
@@ -626,10 +823,20 @@ impl VibeKvTx {
         }
     }
 
+    /// Returns the bucket targeted by this transaction.
+    ///
+    /// # Returns
+    ///
+    /// A borrowed bucket name.
     pub fn bucket(&self) -> &str {
         &self.bucket
     }
 
+    /// Buffers a set operation in the transaction.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(&mut Self)` so transaction operations can be chained.
     pub fn set(
         &mut self,
         key: impl AsRef<str>,
@@ -643,6 +850,11 @@ impl VibeKvTx {
         Ok(self)
     }
 
+    /// Buffers a set operation with a time-to-live in the transaction.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(&mut Self)` so transaction operations can be chained.
     pub fn set_with_ttl(
         &mut self,
         key: impl AsRef<str>,
@@ -657,6 +869,11 @@ impl VibeKvTx {
         Ok(self)
     }
 
+    /// Buffers a remove operation in the transaction.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(&mut Self)` so transaction operations can be chained.
     pub fn remove(&mut self, key: impl AsRef<str>) -> Result<&mut Self, VibeEngineError> {
         self.ops.push(BufferedOp::Remove {
             key: key.as_ref().to_string(),
@@ -668,7 +885,10 @@ impl VibeKvTx {
 fn ttl_to_expires_at(ttl: Option<Duration>) -> i64 {
     match ttl {
         None => EXPIRES_AT_NEVER,
-        Some(d) => crate::platform::now().saturating_add(d.as_millis() as i64),
+        Some(d) => {
+            let ttl_ms = i64::try_from(d.as_millis()).unwrap_or(i64::MAX);
+            crate::platform::now().saturating_add(ttl_ms)
+        }
     }
 }
 
@@ -685,6 +905,7 @@ mod tests {
     use super::*;
     use crate::api::engine::VibeEngine;
     use crate::api::engine_config::{VibeEngineConfig, VibeStoreBackend};
+    #[cfg(feature = "store-diesel-sqlite")]
     use crate::api::engine_error::VibeEngineErrorCode;
     use crate::api::platform_type::VibePlatformType;
     use std::time::Duration;
@@ -788,7 +1009,7 @@ mod tests {
         let store = engine.store();
 
         store.set("big", VibeKvValue::I64(i64::MAX))?;
-        store.set("ratio", VibeKvValue::F64(3.14))?;
+        store.set("ratio", VibeKvValue::F64(2.5))?;
         store.set("blob", VibeKvValue::Bytes(vec![1, 2, 3, 4]))?;
         store.set(
             "json",
@@ -796,9 +1017,11 @@ mod tests {
         )?;
 
         assert_eq!(store.get("big")?.and_then(|v| v.as_i64()), Some(i64::MAX));
-        assert_eq!(store.get("ratio")?.and_then(|v| v.as_f64()), Some(3.14));
+        assert_eq!(store.get("ratio")?.and_then(|v| v.as_f64()), Some(2.5));
         assert_eq!(
-            store.get("blob")?.and_then(|v| v.as_bytes().map(|b| b.to_vec())),
+            store
+                .get("blob")?
+                .and_then(|v| v.as_bytes().map(|b| b.to_vec())),
             Some(vec![1, 2, 3, 4])
         );
         assert_eq!(
@@ -822,11 +1045,15 @@ mod tests {
         cache.set("theme", "light")?;
 
         assert_eq!(
-            settings.get("theme")?.and_then(|v| v.as_str().map(|s| s.to_string())),
+            settings
+                .get("theme")?
+                .and_then(|v| v.as_str().map(|s| s.to_string())),
             Some("dark".to_string())
         );
         assert_eq!(
-            cache.get("theme")?.and_then(|v| v.as_str().map(|s| s.to_string())),
+            cache
+                .get("theme")?
+                .and_then(|v| v.as_str().map(|s| s.to_string())),
             Some("light".to_string())
         );
         assert!(store.get_str("theme")?.is_none());
@@ -952,7 +1179,8 @@ mod tests {
         // `<store_root>/<namespace>/<app_name>/work/loona_desktop_storage.db`.
         let work_dir = store_root.join("tests").join("kv-migrate").join("work");
         std::fs::create_dir_all(&work_dir).map_err(|err| {
-            VibeEngineError::from_error_code(VibeEngineErrorCode::IOError).with_source(err.to_string())
+            VibeEngineError::from_error_code(VibeEngineErrorCode::IOError)
+                .with_source(err.to_string())
         })?;
         let db_path = work_dir.join("loona_desktop_storage.db");
         {
@@ -1012,4 +1240,13 @@ mod tests {
         engine.destroy_with_timeout(Duration::from_secs(5))?;
         Ok(())
     }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/store/kv_store_tests.rs"
+    ));
 }

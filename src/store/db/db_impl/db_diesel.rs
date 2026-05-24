@@ -12,7 +12,7 @@ use crate::store::db::tables::key_val::{
     vibe_ready_key_val, VibeKvValue, VibeTableKeyVal, DEFAULT_BUCKET, EXPIRES_AT_NEVER,
     TABLE_NAME_KEY_VAL, TABLE_NAME_KV_META,
 };
-use crate::{log_db_e, log_db_r, log_db_t};
+use crate::{log_e, log_r, log_t};
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
@@ -20,6 +20,7 @@ use diesel::Connection;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+#[allow(dead_code)]
 pub type DbDatabaseMigrationListener = Box<dyn Fn(/*progress*/ i32) + Send + Sync + 'static>;
 
 /// Latest schema version for the KV store. Bump together with a migration step
@@ -40,6 +41,7 @@ pub enum DbKvOp {
 #[derive(Clone)]
 pub struct VibeDbSqlite {
     pub db_lock: Arc<Mutex<SqliteConnection>>,
+    #[allow(dead_code)]
     pub user_id: String,
 }
 
@@ -51,7 +53,7 @@ impl VibeDbSqlite {
     ) -> Result<Self, VibeDbErrorInfo> {
         let method_name = "try_open";
         let store_path_str = store_path.to_str().unwrap_or("");
-        log_db_t!(
+        log_t!(
             method_name,
             "user_id|is_encrypt|store_path",
             user_id,
@@ -62,7 +64,7 @@ impl VibeDbSqlite {
         let mut conn = Self::get_default_db(store_path, user_id.clone(), is_encrypt)?;
         Self::run_migrations(&mut conn)?;
 
-        log_db_r!(method_name);
+        log_r!(method_name);
         Ok(Self {
             db_lock: Arc::new(Mutex::new(conn)),
             user_id,
@@ -71,6 +73,7 @@ impl VibeDbSqlite {
 
     pub fn close(&self) {}
 
+    #[allow(dead_code)]
     pub fn register_sql_perf_listener<T>(listener_opt: Option<T>)
     where
         T: DbSqlPerfListenerTrait + 'static,
@@ -85,11 +88,12 @@ impl VibeDbSqlite {
                 }
             },
             Err(error) => {
-                log_db_e!("register_sql_perf_listener", DESC, error.to_string());
+                log_e!("register_sql_perf_listener", DESC, error.to_string());
             }
         }
     }
 
+    #[allow(dead_code)]
     pub fn register_sql_exception_listener<T>(listener_opt: Option<T>)
     where
         T: DbSqlExceptionListenerTrait + 'static,
@@ -104,11 +108,12 @@ impl VibeDbSqlite {
                 }
             },
             Err(error) => {
-                log_db_e!("register_sql_exception_listener", DESC, error.to_string());
+                log_e!("register_sql_exception_listener", DESC, error.to_string());
             }
         }
     }
 
+    #[allow(dead_code)]
     pub fn register_db_exception_listener<T>(listener_opt: Option<T>)
     where
         T: DbSqlExceptionListenerTrait + 'static,
@@ -123,11 +128,12 @@ impl VibeDbSqlite {
                 }
             },
             Err(error) => {
-                log_db_e!("register_db_exception_listener", DESC, error.to_string());
+                log_e!("register_db_exception_listener", DESC, error.to_string());
             }
         }
     }
 
+    #[allow(dead_code)]
     pub fn un_register_db_listener() {
         if let Ok(mut listener) = GLOBAL_DB_SQL_PERF_LISTENER.try_lock() {
             *listener = None;
@@ -238,9 +244,8 @@ impl VibeDbSqlite {
     }
 
     fn read_schema_version(conn: &mut SqliteConnection) -> Result<i32, VibeDbErrorInfo> {
-        let sql = format!(
-            "SELECT meta_val FROM {TABLE_NAME_KV_META} WHERE meta_key = 'schema_version'"
-        );
+        let sql =
+            format!("SELECT meta_val FROM {TABLE_NAME_KV_META} WHERE meta_key = 'schema_version'");
         match diesel::sql_query(&sql).load::<MetaValueRow>(conn) {
             Ok(rows) => {
                 if let Some(row) = rows.into_iter().next() {
@@ -266,9 +271,7 @@ impl VibeDbSqlite {
     }
 
     fn table_exists(conn: &mut SqliteConnection, name: &str) -> Result<bool, VibeDbErrorInfo> {
-        let sql = format!(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='{name}'"
-        );
+        let sql = format!("SELECT name FROM sqlite_master WHERE type='table' AND name='{name}'");
         diesel::sql_query(&sql)
             .load::<NameRow>(conn)
             .map(|rows| !rows.is_empty())
@@ -319,6 +322,7 @@ impl VibeDbSqlite {
     }
 
     /// Returns the row regardless of expiry; expiry filtering is applied by callers.
+    #[allow(dead_code)]
     pub fn get_key_val(
         &self,
         owner_user_id: &str,
@@ -344,6 +348,7 @@ impl VibeDbSqlite {
             .map_err(|error| VibeDbErrorInfo::from_diesel(error, Some(sql)))
     }
 
+    #[allow(dead_code)]
     pub fn get_key_val_vec(
         &self,
         owner_user_id: &str,
@@ -372,6 +377,7 @@ impl VibeDbSqlite {
             .map_err(|error| VibeDbErrorInfo::from_diesel(error, Some(sql)))
     }
 
+    #[allow(dead_code)]
     pub fn remove_key_val(
         &self,
         owner_user_id: &str,
@@ -399,6 +405,7 @@ impl VibeDbSqlite {
         Ok(deleted > 0)
     }
 
+    #[allow(dead_code)]
     pub fn contains_key_val(
         &self,
         owner_user_id: &str,
@@ -426,6 +433,7 @@ impl VibeDbSqlite {
         Ok(value.is_some())
     }
 
+    #[allow(dead_code)]
     pub fn list_key_vals(&self, owner_user_id: &str) -> Result<Vec<String>, VibeDbErrorInfo> {
         self.list_key_vals_in_bucket(owner_user_id, DEFAULT_BUCKET)
     }
@@ -495,12 +503,14 @@ impl VibeDbSqlite {
 }
 
 impl VibeDbSqlite {
+    #[allow(dead_code)]
     pub fn manual_backup(&self) -> Result<(), VibeDbErrorInfo> {
         Err(VibeDbErrorInfo::from_not_supported(
             "manual_backup is not supported by diesel sqlite yet".to_string(),
         ))
     }
 
+    #[allow(dead_code)]
     pub fn manual_retrieve(&self) -> Result<(), VibeDbErrorInfo> {
         Err(VibeDbErrorInfo::from_not_supported(
             "manual_retrieve is not supported by diesel sqlite yet".to_string(),
@@ -518,12 +528,12 @@ impl VibeDbSqlite {
 
         let store_path_str = store_path.to_str().ok_or_else(|| {
             let err_msg = "db path is null".to_string();
-            log_db_e!("get_default_db", DESC, err_msg);
+            log_e!("get_default_db", DESC, err_msg);
             VibeDbErrorInfo::from_io(err_msg)
         })?;
 
         if is_encrypt {
-            log_db_e!(
+            log_e!(
                 "get_default_db",
                 DESC,
                 "diesel sqlite does not enable SQLCipher encryption by default"
@@ -551,3 +561,12 @@ impl VibeDbSqlite {
 // Silence "unused" warnings on the helper enum from non-feature builds.
 #[allow(dead_code)]
 fn _touch(_: &VibeKvValue) {}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/store/db_diesel_tests.rs"
+    ));
+}

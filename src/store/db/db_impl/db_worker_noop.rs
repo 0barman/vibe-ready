@@ -92,3 +92,12 @@ impl VibeDbWorkerNoop {
         Ok(0)
     }
 }
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/store/db_worker_noop_tests.rs"
+    ));
+}

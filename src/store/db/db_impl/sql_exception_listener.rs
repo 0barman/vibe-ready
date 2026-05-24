@@ -1,4 +1,4 @@
-use crate::log_db_e;
+use crate::log_e;
 use lazy_static::lazy_static;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -18,6 +18,7 @@ lazy_static! {
         Arc::new(Mutex::new(None));
 }
 
+#[allow(dead_code)]
 pub fn on_sql_exception(description: String, code: i32) {
     let listener_opt = GLOBAL_DB_SQL_EXCEPTION_LISTENER.try_lock();
     if let Ok(listener_opt) = listener_opt {
@@ -25,7 +26,7 @@ pub fn on_sql_exception(description: String, code: i32) {
             listener(description, code);
         }
     } else {
-        log_db_e!(
+        log_e!(
             "on_sql_exception",
             "desc",
             "Error occurred while locking GLOBAL_DB_SQL_EXCEPTION_LISTENER"
@@ -38,10 +39,19 @@ pub fn on_sql_exception(description: String, code: i32) {
             listener(String::new(), code);
         }
     } else {
-        log_db_e!(
+        log_e!(
             "on_sql_exception",
             "desc",
             "Error occurred while locking DB_EXCEPTION_LISTENER"
         );
     }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/store/sql_exception_listener_tests.rs"
+    ));
 }

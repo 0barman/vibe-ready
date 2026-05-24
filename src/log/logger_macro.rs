@@ -1,4 +1,3 @@
-use crate::log::log_def::LogType;
 use crate::log::log_level::LogLevel;
 use crate::log::logger::VibeLogger;
 use chrono::Local;
@@ -7,12 +6,21 @@ use lazy_static::lazy_static;
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-pub static LOG_PREFIX: &str = "L";
+/// Prefix used by vibe-ready structured log tags.
+pub static LOG_PREFIX: &str = "V";
 
-pub trait LogListenerTrait: Fn(String, LogLevel, LogType, String, String) + Send + Sync {}
+/// Trait implemented by global log listener callbacks.
+pub trait LogListenerTrait: Fn(String, LogLevel, String, String) + Send + Sync {}
+/// Boxed global log listener used by the log macro pipeline.
 pub type DBLogListener = Box<dyn LogListenerTrait>;
-impl<T> LogListenerTrait for T where T: Fn(String, LogLevel, LogType, String, String) + Send + Sync {}
+impl<T> LogListenerTrait for T where T: Fn(String, LogLevel, String, String) + Send + Sync {}
 
+/// Builds JSON log content from field names and values.
+///
+/// # Returns
+///
+/// A JSON object string when serialization succeeds, or a debug/error string
+/// when serialization fails.
 pub fn create_log_content(first_field: Option<&str>, values: Option<Vec<Value>>) -> String {
     if first_field.is_none() && values.is_none() {
         return "{}".to_string();
@@ -37,41 +45,30 @@ pub fn create_log_content(first_field: Option<&str>, values: Option<Vec<Value>>)
     }
 }
 
+/// Receives a structured log event from exported log macros.
+///
+/// # Returns
+///
+/// This function returns `()` after dispatching to the global listener and stdout.
 pub fn on_log(
     location: String,
     level: LogLevel,
-    log_type: LogType,
+    ext: Option<String>,
     tag: &str,
     first_field: Option<&str>,
     values: Option<Vec<Value>>,
     suffix: &str,
 ) {
     let content = create_log_content(first_field, values);
-    let tag_data = match log_type {
-        LogType::None => {
-            format!("{}-{}-{}", LOG_PREFIX, tag, suffix)
-        }
-        LogType::Database => {
-            format!("{}_{}-{}-{}", LOG_PREFIX, "DB", tag, suffix)
-        }
-        LogType::Engine => {
-            format!("{}-{}-{}", LOG_PREFIX, tag, suffix)
-        }
-        LogType::WSS => {
-            format!("{}_{}-{}-{}", LOG_PREFIX, "WSS", tag, suffix)
-        }
+    let tag_data = match ext {
+        Some(ext) => format!("{}-{}-{}-{}", LOG_PREFIX, ext, tag, suffix),
+        None => format!("{}-{}-{}", LOG_PREFIX, tag, suffix),
     };
 
     match GLOBAL_DB_LOG_LISTENER.try_read() {
         Ok(listener) => {
             if let Some(on_log) = &*listener {
-                on_log(
-                    location.clone(),
-                    level,
-                    log_type,
-                    tag_data.clone(),
-                    content.clone(),
-                );
+                on_log(location.clone(), level, tag_data.clone(), content.clone());
             }
         }
         Err(error) => {
@@ -83,14 +80,7 @@ pub fn on_log(
     }
 
     let time = Local::now().format("%H:%M:%S%.3f");
-    println!(
-        "{} {} {:?} {:?} {}",
-        time,
-        tag_data.clone(),
-        level,
-        log_type,
-        content
-    );
+    println!("{} {} {:?} {}", time, tag_data.clone(), level, content);
 }
 
 #[doc(hidden)]
@@ -111,7 +101,7 @@ macro_rules! location {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! internal_log_db {
-    ($log_type:expr, $level:expr, $suffix:expr, $tag:expr, $first_field:expr, $( $value:expr ),*) => {
+    ($level:expr, $suffix:expr, $tag:expr, $first_field:expr, $( $value:expr ),*) => {
         let values = vec![$( serde_json::json!($value) ),*];
         let location = std::panic::Location::caller();
         let location = format!(
@@ -120,10 +110,10 @@ macro_rules! internal_log_db {
             location.line(),
             location.column()
         );
-        $crate::__vibe_internal_log_on_log(location.clone(), $level, $log_type, $tag, Some($first_field), Some(values), $suffix)
+        $crate::__vibe_internal_log_on_log(location.clone(), $level, None, $tag, Some($first_field), Some(values), $suffix)
     };
 
-    ($log_type:expr, $level:expr, $suffix:expr, $tag:expr, $( $value:expr ),*) => {
+    ($level:expr, $suffix:expr, $tag:expr, $( $value:expr ),*) => {
         let values = vec![$( serde_json::json!($value) ),*];
         let location = std::panic::Location::caller();
         let location = format!(
@@ -132,10 +122,10 @@ macro_rules! internal_log_db {
             location.line(),
             location.column()
         );
-        $crate::__vibe_internal_log_on_log(location.clone(), $level, $log_type, $tag, None, None, $suffix)
+        $crate::__vibe_internal_log_on_log(location.clone(), $level, None, $tag, None, None, $suffix)
     };
 
-    ($log_type:expr, $level:expr, $suffix:expr, $tag:expr) => {
+    ($level:expr, $suffix:expr, $tag:expr) => {
         let location = std::panic::Location::caller();
         let location = format!(
             "{}:{}:{}",
@@ -143,14 +133,14 @@ macro_rules! internal_log_db {
             location.line(),
             location.column()
         );
-        $crate::__vibe_internal_log_on_log(location.clone(), $level, $log_type, $tag, None, None, $suffix)
+        $crate::__vibe_internal_log_on_log(location.clone(), $level, None, $tag, None, None, $suffix)
     };
 }
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! internal_log_wss {
-    ($log_type:expr, $level:expr, $suffix:expr, $tag:expr, $first_field:expr, $( $value:expr ),*) => {
+macro_rules! internal_log_db_ext {
+    ($ext:expr, $level:expr, $suffix:expr, $tag:expr, $first_field:expr, $( $value:expr ),*) => {
         let values = vec![$( serde_json::json!($value) ),*];
         let location = std::panic::Location::caller();
         let location = format!(
@@ -159,10 +149,10 @@ macro_rules! internal_log_wss {
             location.line(),
             location.column()
         );
-        $crate::__vibe_internal_log_on_log(location.clone(), $level, $log_type, $tag, Some($first_field), Some(values), $suffix)
+        $crate::__vibe_internal_log_on_log(location.clone(), $level, $ext, $tag, Some($first_field), Some(values), $suffix)
     };
 
-    ($log_type:expr, $level:expr, $suffix:expr, $tag:expr, $( $value:expr ),*) => {
+    ($ext:expr, $level:expr, $suffix:expr, $tag:expr, $( $value:expr ),*) => {
         let values = vec![$( serde_json::json!($value) ),*];
         let location = std::panic::Location::caller();
         let location = format!(
@@ -171,10 +161,10 @@ macro_rules! internal_log_wss {
             location.line(),
             location.column()
         );
-        $crate::__vibe_internal_log_on_log(location.clone(), $level, $log_type, $tag, None, None, $suffix)
+        $crate::__vibe_internal_log_on_log(location.clone(), $level, $ext, $tag, None, None, $suffix)
     };
 
-    ($log_type:expr, $level:expr, $suffix:expr, $tag:expr) => {
+    ($ext:expr, $level:expr, $suffix:expr, $tag:expr) => {
         let location = std::panic::Location::caller();
         let location = format!(
             "{}:{}:{}",
@@ -182,205 +172,197 @@ macro_rules! internal_log_wss {
             location.line(),
             location.column()
         );
-        $crate::__vibe_internal_log_on_log(location.clone(), $level, $log_type, $tag, None, None, $suffix)
+        $crate::__vibe_internal_log_on_log(location.clone(), $level, $ext, $tag, None, None, $suffix)
     };
 }
 
-#[macro_export]
-macro_rules! log_db_t {
-    ($tag:expr, $first_field:expr, $( $value:expr ),*) => {
-        $crate::internal_log_db!($crate::VibeLogType::Database, $crate::VibeLogLevel::Info, "T", $tag, $first_field, $( $value ),*)
-    };
-
-    ($tag:expr, $( $value:expr ),*) => {
-        $crate::internal_log_db!($crate::VibeLogType::Database, $crate::VibeLogLevel::Info, "T", $tag, $( $value ),*)
-    };
-
-    ($tag:expr) => {
-        $crate::internal_log_db!($crate::VibeLogType::Database, $crate::VibeLogLevel::Info, "T", $tag)
-    };
-}
-
-#[macro_export]
-macro_rules! log_db_r {
-    ($tag:expr, $first_field:expr, $( $value:expr ),*) => {
-        $crate::internal_log_db!($crate::VibeLogType::Database, $crate::VibeLogLevel::Debug, "R", $tag, $first_field, $( $value ),*)
-    };
-
-    ($tag:expr, $( $value:expr ),*) => {
-        $crate::internal_log_db!($crate::VibeLogType::Database, $crate::VibeLogLevel::Debug, "R", $tag, $( $value ),*)
-    };
-
-    ($tag:expr) => {
-        $crate::internal_log_db!($crate::VibeLogType::Database, $crate::VibeLogLevel::Debug, "R", $tag)
-    };
-}
-
-#[macro_export]
-macro_rules! log_db_s {
-    ($tag:expr, $first_field:expr, $( $value:expr ),*) => {
-        $crate::internal_log_db!($crate::VibeLogType::Database, $crate::VibeLogLevel::Debug, "S", $tag, $first_field, $( $value ),*)
-    };
-
-    ($tag:expr, $( $value:expr ),*) => {
-        $crate::internal_log_db!($crate::VibeLogType::Database, $crate::VibeLogLevel::Debug, "S", $tag, $( $value ),*)
-    };
-
-    ($tag:expr) => {
-        $crate::internal_log_db!($crate::VibeLogType::Database, $crate::VibeLogLevel::Debug, "S", $tag)
-    };
-}
-
-#[macro_export]
-macro_rules! log_db_e {
-    ($tag:expr, $first_field:expr, $( $value:expr ),*) => {
-        $crate::internal_log_db!($crate::VibeLogType::Database, $crate::VibeLogLevel::Error, "E", $tag, $first_field, $( $value ),*)
-    };
-
-    ($tag:expr, $( $value:expr ),*) => {
-        $crate::internal_log_db!($crate::VibeLogType::Database, $crate::VibeLogLevel::Error, "E", $tag, $( $value ),*)
-    };
-
-    ($tag:expr) => {
-        $crate::internal_log_db!($crate::VibeLogType::Database, $crate::VibeLogLevel::Error, "E", $tag)
-    };
-}
-
-#[macro_export]
-macro_rules! log_wss_t {
-    ($tag:expr, $first_field:expr, $( $value:expr ),*) => {
-        $crate::internal_log_wss!($crate::VibeLogType::WSS, $crate::VibeLogLevel::Info, "T", $tag, $first_field, $( $value ),*)
-    };
-
-    ($tag:expr, $( $value:expr ),*) => {
-        $crate::internal_log_wss!($crate::VibeLogType::WSS, $crate::VibeLogLevel::Info, "T", $tag, $( $value ),*)
-    };
-
-    ($tag:expr) => {
-        $crate::internal_log_wss!($crate::VibeLogType::WSS, $crate::VibeLogLevel::Info, "T", $tag)
-    };
-}
-
-#[macro_export]
-macro_rules! log_wss_r {
-    ($tag:expr, $first_field:expr, $( $value:expr ),*) => {
-        $crate::internal_log_wss!($crate::VibeLogType::WSS, $crate::VibeLogLevel::Debug, "R", $tag, $first_field, $( $value ),*)
-    };
-
-    ($tag:expr, $( $value:expr ),*) => {
-        $crate::internal_log_wss!($crate::VibeLogType::WSS, $crate::VibeLogLevel::Debug, "R", $tag, $( $value ),*)
-    };
-
-    ($tag:expr) => {
-        $crate::internal_log_wss!($crate::VibeLogType::WSS, $crate::VibeLogLevel::Debug, "R", $tag)
-    };
-}
-
-#[macro_export]
-macro_rules! log_wss_s {
-    ($tag:expr, $first_field:expr, $( $value:expr ),*) => {
-        $crate::internal_log_wss!($crate::VibeLogType::WSS, $crate::VibeLogLevel::Debug, "S", $tag, $first_field, $( $value ),*)
-    };
-
-    ($tag:expr, $( $value:expr ),*) => {
-        $crate::internal_log_wss!($crate::VibeLogType::WSS, $crate::VibeLogLevel::Debug, "S", $tag, $( $value ),*)
-    };
-
-    ($tag:expr) => {
-        $crate::internal_log_wss!($crate::VibeLogType::WSS, $crate::VibeLogLevel::Debug, "S", $tag)
-    };
-}
-
-#[macro_export]
-macro_rules! log_wss_e {
-    ($tag:expr, $first_field:expr, $( $value:expr ),*) => {
-        $crate::internal_log_wss!($crate::VibeLogType::WSS, $crate::VibeLogLevel::Error, "E", $tag, $first_field, $( $value ),*)
-    };
-
-    ($tag:expr, $( $value:expr ),*) => {
-        $crate::internal_log_wss!($crate::VibeLogType::WSS, $crate::VibeLogLevel::Error, "E", $tag, $( $value ),*)
-    };
-
-    ($tag:expr) => {
-        $crate::internal_log_wss!($crate::VibeLogType::WSS, $crate::VibeLogLevel::Error, "E", $tag)
-    };
-}
-
+/// Emits an info-level structured log entry.
+///
+/// # Examples
+///
+/// ```
+/// vibe_ready::log_i!("startup", "status", "ready");
+/// ```
 #[macro_export]
 macro_rules! log_i {
     ($tag:expr, $first_field:expr, $( $value:expr ),*) => {
-        $crate::internal_log_db!($crate::VibeLogType::Engine, $crate::VibeLogLevel::Info, "I", $tag, $first_field, $( $value ),*)
+        $crate::internal_log_db!($crate::VibeLogLevel::Info, "I", $tag, $first_field, $( $value ),*)
     };
 
     ($tag:expr, $( $value:expr ),*) => {
-        $crate::internal_log_db!($crate::VibeLogType::Engine, $crate::VibeLogLevel::Info, "I", $tag, $( $value ),*)
+        $crate::internal_log_db!($crate::VibeLogLevel::Info, "I", $tag, $( $value ),*)
     };
 
     ($tag:expr) => {
-        $crate::internal_log_db!($crate::VibeLogType::Engine, $crate::VibeLogLevel::Info, "I", $tag)
+        $crate::internal_log_db!($crate::VibeLogLevel::Info, "I", $tag)
     };
 }
 
+/// Emits an info-level structured log entry with an extension segment in the tag.
+///
+/// # Examples
+///
+/// ```
+/// vibe_ready::log_i_!(Some("host".to_string()), "startup", "status", "ready");
+/// ```
+#[macro_export]
+macro_rules! log_i_ {
+    ($ext:expr, $tag:expr, $first_field:expr, $( $value:expr ),*) => {
+        $crate::internal_log_db_ext!($ext, $crate::VibeLogLevel::Info, "I", $tag, $first_field, $( $value ),*)
+    };
+
+    ($ext:expr, $tag:expr, $( $value:expr ),*) => {
+        $crate::internal_log_db_ext!($ext, $crate::VibeLogLevel::Info, "I", $tag, $( $value ),*)
+    };
+
+    ($ext:expr, $tag:expr) => {
+        $crate::internal_log_db_ext!($ext, $crate::VibeLogLevel::Info, "I", $tag)
+    };
+}
+
+/// Emits an info-level trace-style structured log entry.
 #[macro_export]
 macro_rules! log_t {
     ($tag:expr, $first_field:expr, $( $value:expr ),*) => {
-        $crate::internal_log_db!($crate::VibeLogType::Engine, $crate::VibeLogLevel::Info, "T", $tag, $first_field, $( $value ),*)
+        $crate::internal_log_db!($crate::VibeLogLevel::Info, "T", $tag, $first_field, $( $value ),*)
     };
 
     ($tag:expr, $( $value:expr ),*) => {
-        $crate::internal_log_db!($crate::VibeLogType::Engine, $crate::VibeLogLevel::Info, "T", $tag, $( $value ),*)
+        $crate::internal_log_db!($crate::VibeLogLevel::Info, "T", $tag, $( $value ),*)
     };
 
     ($tag:expr) => {
-        $crate::internal_log_db!($crate::VibeLogType::Engine, $crate::VibeLogLevel::Info, "T", $tag)
+        $crate::internal_log_db!($crate::VibeLogLevel::Info, "T", $tag)
     };
 }
 
+/// Emits an info-level trace-style structured log entry with an extension segment.
+#[macro_export]
+macro_rules! log_t_ {
+    ($ext:expr, $tag:expr, $first_field:expr, $( $value:expr ),*) => {
+        $crate::internal_log_db_ext!($ext, $crate::VibeLogLevel::Info, "T", $tag, $first_field, $( $value ),*)
+    };
+
+    ($ext:expr, $tag:expr, $( $value:expr ),*) => {
+        $crate::internal_log_db_ext!($ext, $crate::VibeLogLevel::Info, "T", $tag, $( $value ),*)
+    };
+
+    ($ext:expr, $tag:expr) => {
+        $crate::internal_log_db_ext!($ext, $crate::VibeLogLevel::Info, "T", $tag)
+    };
+}
+
+/// Emits a debug-level read-style structured log entry.
 #[macro_export]
 macro_rules! log_r {
     ($tag:expr, $first_field:expr, $( $value:expr ),*) => {
-        $crate::internal_log_db!($crate::VibeLogType::Engine, $crate::VibeLogLevel::Debug, "R", $tag, $first_field, $( $value ),*)
+        $crate::internal_log_db!($crate::VibeLogLevel::Debug, "R", $tag, $first_field, $( $value ),*)
     };
 
     ($tag:expr, $( $value:expr ),*) => {
-        $crate::internal_log_db!($crate::VibeLogType::Engine, $crate::VibeLogLevel::Debug, "R", $tag, $( $value ),*)
+        $crate::internal_log_db!($crate::VibeLogLevel::Debug, "R", $tag, $( $value ),*)
     };
 
     ($tag:expr) => {
-        $crate::internal_log_db!($crate::VibeLogType::Engine, $crate::VibeLogLevel::Debug, "R", $tag)
+        $crate::internal_log_db!($crate::VibeLogLevel::Debug, "R", $tag)
     };
 }
 
+/// Emits a debug-level read-style structured log entry with an extension segment.
+#[macro_export]
+macro_rules! log_r_ {
+    ($ext:expr, $tag:expr, $first_field:expr, $( $value:expr ),*) => {
+        $crate::internal_log_db_ext!($ext, $crate::VibeLogLevel::Debug, "R", $tag, $first_field, $( $value ),*)
+    };
+
+    ($ext:expr, $tag:expr, $( $value:expr ),*) => {
+        $crate::internal_log_db_ext!($ext, $crate::VibeLogLevel::Debug, "R", $tag, $( $value ),*)
+    };
+
+    ($ext:expr, $tag:expr) => {
+        $crate::internal_log_db_ext!($ext, $crate::VibeLogLevel::Debug, "R", $tag)
+    };
+}
+
+/// Emits a debug-level state-style structured log entry.
 #[macro_export]
 macro_rules! log_s {
     ($tag:expr, $first_field:expr, $( $value:expr ),*) => {
-        $crate::internal_log_db!($crate::VibeLogType::Engine, $crate::VibeLogLevel::Debug, "S", $tag, $first_field, $( $value ),*)
+        $crate::internal_log_db!($crate::VibeLogLevel::Debug, "S", $tag, $first_field, $( $value ),*)
     };
 
     ($tag:expr, $( $value:expr ),*) => {
-        $crate::internal_log_db!($crate::VibeLogType::Engine, $crate::VibeLogLevel::Debug, "S", $tag, $( $value ),*)
+        $crate::internal_log_db!($crate::VibeLogLevel::Debug, "S", $tag, $( $value ),*)
     };
 
     ($tag:expr) => {
-        $crate::internal_log_db!($crate::VibeLogType::Engine, $crate::VibeLogLevel::Debug, "S", $tag)
+        $crate::internal_log_db!($crate::VibeLogLevel::Debug, "S", $tag)
     };
 }
 
+/// Emits a debug-level state-style structured log entry with an extension segment.
+#[macro_export]
+macro_rules! log_s_ {
+    ($ext:expr, $tag:expr, $first_field:expr, $( $value:expr ),*) => {
+        $crate::internal_log_db_ext!($ext, $crate::VibeLogLevel::Debug, "S", $tag, $first_field, $( $value ),*)
+    };
+
+    ($ext:expr, $tag:expr, $( $value:expr ),*) => {
+        $crate::internal_log_db_ext!($ext, $crate::VibeLogLevel::Debug, "S", $tag, $( $value ),*)
+    };
+
+    ($ext:expr, $tag:expr) => {
+        $crate::internal_log_db_ext!($ext, $crate::VibeLogLevel::Debug, "S", $tag)
+    };
+}
+
+/// Emits an error-level structured log entry.
+///
+/// # Examples
+///
+/// ```
+/// vibe_ready::log_e!("startup", "reason", "failed");
+/// ```
 #[macro_export]
 macro_rules! log_e {
     ($tag:expr, $first_field:expr, $( $value:expr ),*) => {
-        $crate::internal_log_db!($crate::VibeLogType::Engine, $crate::VibeLogLevel::Error, "E", $tag, $first_field, $( $value ),*)
+        $crate::internal_log_db!($crate::VibeLogLevel::Error, "E", $tag, $first_field, $( $value ),*)
     };
 
     ($tag:expr, $( $value:expr ),*) => {
-        $crate::internal_log_db!($crate::VibeLogType::Engine, $crate::VibeLogLevel::Error, "E", $tag, $( $value ),*)
+        $crate::internal_log_db!($crate::VibeLogLevel::Error, "E", $tag, $( $value ),*)
     };
 
     ($tag:expr) => {
-        $crate::internal_log_db!($crate::VibeLogType::Engine, $crate::VibeLogLevel::Error, "E", $tag)
+        $crate::internal_log_db!($crate::VibeLogLevel::Error, "E", $tag)
     };
 }
 
+/// Emits an error-level structured log entry with an extension segment.
+#[macro_export]
+macro_rules! log_e_ {
+    ($ext:expr, $tag:expr, $first_field:expr, $( $value:expr ),*) => {
+        $crate::internal_log_db_ext!($ext, $crate::VibeLogLevel::Error, "E", $tag, $first_field, $( $value ),*)
+    };
+
+    ($ext:expr, $tag:expr, $( $value:expr ),*) => {
+        $crate::internal_log_db_ext!($ext, $crate::VibeLogLevel::Error, "E", $tag, $( $value ),*)
+    };
+
+    ($ext:expr, $tag:expr) => {
+        $crate::internal_log_db_ext!($ext, $crate::VibeLogLevel::Error, "E", $tag)
+    };
+}
+
+/// Converts an array-like value to a JSON string.
+///
+/// # Examples
+///
+/// ```
+/// let values = vec![1, 2, 3];
+/// let json = vibe_ready::array_to_json_string!(values);
+/// assert_eq!(json, "[1,2,3]");
+/// ```
 #[macro_export]
 macro_rules! array_to_json_string {
     ($vec:expr) => {{
@@ -393,6 +375,7 @@ macro_rules! array_to_json_string {
     }};
 }
 
+/// Converts displayable objects to a JSON-array-like string using `Display`.
 #[macro_export]
 macro_rules! obj_array_to_json_string {
     ($vec:expr) => {{
@@ -406,6 +389,7 @@ macro_rules! obj_array_to_json_string {
     }};
 }
 
+/// Converts a string-keyed map of basic serializable values to JSON.
 #[macro_export]
 macro_rules! basic_type_map_to_json_string {
     ($map:expr) => {{
@@ -423,6 +407,7 @@ macro_rules! basic_type_map_to_json_string {
     }};
 }
 
+/// Implements `Display` for serializable types by rendering JSON.
 #[macro_export]
 macro_rules! impl_display_json {
     ($($struct:ty),*) => {
@@ -439,6 +424,16 @@ macro_rules! impl_display_json {
     };
 }
 
+/// Logs an error with a backtrace and returns the same error expression.
+///
+/// # Examples
+///
+/// ```
+/// use vibe_ready::{err, VibeEngineError, VibeErrorCode};
+///
+/// let error = err!(VibeEngineError::from_error_code(VibeErrorCode::RuntimeError));
+/// assert_eq!(error.code(), VibeErrorCode::RuntimeError.code());
+/// ```
 #[macro_export]
 macro_rules! err {
     ($err:expr) => {{
@@ -456,6 +451,11 @@ lazy_static! {
 }
 
 impl VibeLogger {
+    /// Registers or clears the global listener used by exported log macros.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `()` after updating the listener when the lock is available.
     pub fn register_log_listener<T: LogListenerTrait + 'static>(listener: Option<T>) {
         if let Ok(mut guard) = GLOBAL_DB_LOG_LISTENER.try_write() {
             match listener {
@@ -465,9 +465,23 @@ impl VibeLogger {
         }
     }
 
+    /// Clears the global listener used by exported log macros.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `()` after clearing the listener when the lock is available.
     pub fn clear_global_log_listener() {
         if let Ok(mut guard) = GLOBAL_DB_LOG_LISTENER.try_write() {
             *guard = None;
         }
     }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/log/logger_macro_tests.rs"
+    ));
 }

@@ -26,6 +26,7 @@ lazy_static! {
         Arc::new(Mutex::new(None));
 }
 
+#[allow(dead_code)]
 pub fn on_sql_perf(sql: String, cost_in_nanoseconds: u64) {
     if let Ok(listener_opt) = GLOBAL_DB_SQL_PERF_LISTENER.try_lock() {
         if let Some(listener) = &*listener_opt {
@@ -34,4 +35,13 @@ pub fn on_sql_perf(sql: String, cost_in_nanoseconds: u64) {
     } else {
         println!("Error occurred while locking GLOBAL_DB_SQL_PERF_LISTENER");
     }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/store/sql_perf_listener_tests.rs"
+    ));
 }

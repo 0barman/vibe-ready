@@ -21,12 +21,15 @@ fn scheduler_lock_error(context: impl Into<String>) -> VibeEngineError {
     VibeEngineError::from_error_code(VibeEngineErrorCode::RuntimeError).with_context(context)
 }
 
-/// Priority lane used by [`VibeEngine::post_with_priority`] and friends.
+/// Priority lane used by [`crate::VibeEngine::post_with_priority`] and friends.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum VibeTaskPriority {
+    /// Run before normal and low priority tasks queued at the same time.
     High = 0,
+    /// Default priority for scheduled work.
     Normal = 1,
+    /// Run after high and normal priority tasks.
     Low = 2,
 }
 
@@ -54,17 +57,23 @@ pub enum VibeTaskKind {
 /// Lifecycle state of a scheduler-tracked task.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VibeTaskState {
+    /// The task is queued but has not started yet.
     Pending,
+    /// The task is currently running.
     Running,
+    /// The task finished successfully.
     Completed,
+    /// Cancellation was requested and the task stopped.
     Cancelled,
+    /// The task failed or panicked.
     Failed,
 }
 
 /// Cooperative cancellation token passed to scheduled tasks.
 ///
-/// Tasks may poll [`is_cancelled`] before/after async points or `await`
-/// [`cancelled`] to be notified the moment cancellation is requested.
+/// Tasks may poll [`VibeCancellationToken::is_cancelled`] before/after async
+/// points or `await` [`VibeCancellationToken::cancelled`] to be notified the
+/// moment cancellation is requested.
 #[derive(Clone)]
 pub struct VibeCancellationToken {
     flag: Arc<AtomicBool>,
@@ -72,6 +81,22 @@ pub struct VibeCancellationToken {
 }
 
 impl VibeCancellationToken {
+    /// Creates a cancellation token in the non-cancelled state.
+    ///
+    /// # Returns
+    ///
+    /// A new [`VibeCancellationToken`] that can be cloned and shared with tasks.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vibe_ready::VibeCancellationToken;
+    ///
+    /// let token = VibeCancellationToken::new();
+    /// assert!(!token.is_cancelled());
+    /// token.cancel();
+    /// assert!(token.is_cancelled());
+    /// ```
     pub fn new() -> Self {
         Self {
             flag: Arc::new(AtomicBool::new(false)),
@@ -80,17 +105,31 @@ impl VibeCancellationToken {
     }
 
     /// Trip the token; idempotent.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `()` and wakes tasks waiting in
+    /// [`VibeCancellationToken::cancelled`].
     pub fn cancel(&self) {
         if !self.flag.swap(true, Ordering::AcqRel) {
             self.notify.notify_waiters();
         }
     }
 
+    /// Checks whether cancellation has been requested.
+    ///
+    /// # Returns
+    ///
+    /// `true` after [`VibeCancellationToken::cancel`] has been called.
     pub fn is_cancelled(&self) -> bool {
         self.flag.load(Ordering::Acquire)
     }
 
     /// Resolves once the token has been tripped.
+    ///
+    /// # Returns
+    ///
+    /// This async method returns `()` after cancellation is observed.
     pub async fn cancelled(&self) {
         loop {
             if self.is_cancelled() {
@@ -207,13 +246,21 @@ impl TaskInner {
 /// Snapshot of a scheduler-tracked task, returned by [`VibeTaskPanel::list`].
 #[derive(Clone, Debug)]
 pub struct VibeTaskInfo {
+    /// Unique task id assigned by the scheduler.
     pub id: u64,
+    /// Human-readable task name supplied by the caller.
     pub name: String,
+    /// How the task was scheduled.
     pub kind: VibeTaskKind,
+    /// Priority lane used by the task.
     pub priority: VibeTaskPriority,
+    /// Current lifecycle state.
     pub state: VibeTaskState,
+    /// Creation timestamp in Unix milliseconds.
     pub created_at_ms: i64,
+    /// Start timestamp in Unix milliseconds, if the task has started.
     pub started_at_ms: Option<i64>,
+    /// Finish timestamp in Unix milliseconds, if the task has finished.
     pub finished_at_ms: Option<i64>,
 }
 
@@ -226,22 +273,47 @@ pub struct VibeTaskHandle {
 }
 
 impl VibeTaskHandle {
+    /// Returns the scheduler-assigned task id.
+    ///
+    /// # Returns
+    ///
+    /// A unique task id for this engine instance.
     pub fn id(&self) -> u64 {
         self.inner.id
     }
 
+    /// Returns the task name.
+    ///
+    /// # Returns
+    ///
+    /// A borrowed task name supplied when the task was scheduled.
     pub fn name(&self) -> &str {
         &self.inner.name
     }
 
+    /// Returns the task kind.
+    ///
+    /// # Returns
+    ///
+    /// A [`VibeTaskKind`] describing whether the task is once, delayed, or periodic.
     pub fn kind(&self) -> VibeTaskKind {
         self.inner.kind
     }
 
+    /// Returns the task priority.
+    ///
+    /// # Returns
+    ///
+    /// The [`VibeTaskPriority`] lane used by this task.
     pub fn priority(&self) -> VibeTaskPriority {
         self.inner.priority
     }
 
+    /// Returns the current task state.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(VibeTaskState)` or [`VibeEngineError`] if scheduler state is poisoned.
     pub fn state(&self) -> Result<VibeTaskState, VibeEngineError> {
         self.inner
             .state
@@ -250,21 +322,41 @@ impl VibeTaskHandle {
             .map_err(|_| scheduler_lock_error("task state lock poisoned"))
     }
 
+    /// Returns the cancellation token shared with the task.
+    ///
+    /// # Returns
+    ///
+    /// A clone of the task's [`VibeCancellationToken`].
     pub fn token(&self) -> VibeCancellationToken {
         self.inner.token.clone()
     }
 
+    /// Returns a point-in-time snapshot for this task.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(VibeTaskInfo)` with identifiers, state, and timestamps.
     pub fn info(&self) -> Result<VibeTaskInfo, VibeEngineError> {
         self.inner.snapshot()
     }
 
     /// Trips the cancellation token. The task itself decides when to bail.
     /// Periodic tasks observe the token before scheduling the next iteration
-    /// and `await` callers of [`join`] eventually return `Err(Cancelled)`.
+    /// and `await` callers of [`VibeTaskHandle::join`] eventually return
+    /// `Err(Cancelled)`.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `()` after requesting cancellation.
     pub fn cancel(&self) {
         self.inner.token.cancel();
     }
 
+    /// Checks whether the task is in a terminal state.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` for completed, cancelled, or failed tasks.
     pub fn is_finished(&self) -> Result<bool, VibeEngineError> {
         Ok(matches!(
             self.state()?,
@@ -306,10 +398,33 @@ pub struct VibeTaskPanel {
 }
 
 impl VibeTaskPanel {
+    /// Lists live scheduler task snapshots.
+    ///
+    /// # Returns
+    ///
+    /// A vector of [`VibeTaskInfo`] values for tasks still tracked by the scheduler.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use vibe_ready::{VibeEngine, VibeEngineConfig, VibeResult};
+    /// # fn demo() -> VibeResult<()> {
+    /// let engine = VibeEngine::create(VibeEngineConfig::builder().build())?;
+    /// let tasks = engine.tasks().list()?;
+    /// assert!(tasks.is_empty());
+    /// # engine.destroy_with_timeout(std::time::Duration::from_secs(1))?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn list(&self) -> Result<Vec<VibeTaskInfo>, VibeEngineError> {
         self.registry.snapshot()
     }
 
+    /// Counts live scheduler tasks.
+    ///
+    /// # Returns
+    ///
+    /// The number of tasks currently tracked by the scheduler.
     pub fn count(&self) -> Result<usize, VibeEngineError> {
         self.registry.len()
     }
@@ -433,10 +548,6 @@ impl VibeTaskScheduler {
         })
     }
 
-    pub(crate) fn handle(&self) -> &Handle {
-        &self.handle
-    }
-
     pub(crate) fn panel(self: &Arc<Self>) -> VibeTaskPanel {
         VibeTaskPanel {
             registry: Arc::clone(&self.registry),
@@ -499,23 +610,43 @@ impl VibeTaskScheduler {
         let wrapped: VibeEngineTask = Box::pin(async move {
             if token.is_cancelled() {
                 if let Err(error) = task_for_run.finish(VibeTaskState::Cancelled) {
-                    log_e!("scheduler.post_with_priority", DESC, format!("finish failed: {error}"));
+                    log_e!(
+                        "scheduler.post_with_priority",
+                        DESC,
+                        format!("finish failed: {error}")
+                    );
                 }
                 if let Err(error) = registry.remove(task_for_run.id) {
-                    log_e!("scheduler.post_with_priority", DESC, format!("registry remove failed: {error}"));
+                    log_e!(
+                        "scheduler.post_with_priority",
+                        DESC,
+                        format!("registry remove failed: {error}")
+                    );
                 }
                 return;
             }
             if let Err(error) = task_for_run.mark_started() {
-                log_e!("scheduler.post_with_priority", DESC, format!("mark started failed: {error}"));
+                log_e!(
+                    "scheduler.post_with_priority",
+                    DESC,
+                    format!("mark started failed: {error}")
+                );
                 return;
             }
             let final_state = run_user_future(Box::pin(future), &token).await;
             if let Err(error) = task_for_run.finish(final_state) {
-                log_e!("scheduler.post_with_priority", DESC, format!("finish failed: {error}"));
+                log_e!(
+                    "scheduler.post_with_priority",
+                    DESC,
+                    format!("finish failed: {error}")
+                );
             }
             if let Err(error) = registry.remove(task_for_run.id) {
-                log_e!("scheduler.post_with_priority", DESC, format!("registry remove failed: {error}"));
+                log_e!(
+                    "scheduler.post_with_priority",
+                    DESC,
+                    format!("registry remove failed: {error}")
+                );
             }
         });
 
@@ -532,10 +663,18 @@ impl VibeTaskScheduler {
                 format!("send to priority lane {} failed: {err}", priority.as_str())
             );
             if let Err(error) = task_for_send.finish(VibeTaskState::Failed) {
-                log_e!("scheduler.post_with_priority", DESC, format!("finish failed: {error}"));
+                log_e!(
+                    "scheduler.post_with_priority",
+                    DESC,
+                    format!("finish failed: {error}")
+                );
             }
             if let Err(error) = registry_for_send.remove(task_for_send.id) {
-                log_e!("scheduler.post_with_priority", DESC, format!("registry remove failed: {error}"));
+                log_e!(
+                    "scheduler.post_with_priority",
+                    DESC,
+                    format!("registry remove failed: {error}")
+                );
             }
             return Err(VibeEngineError::from_error_code(
                 VibeEngineErrorCode::PostError,
@@ -611,13 +750,21 @@ impl VibeTaskScheduler {
         F: FnMut(VibeCancellationToken) -> Fut + Send + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
-        let task = self.make_task(name.into(), VibeTaskKind::Periodic, VibeTaskPriority::Normal)?;
+        let task = self.make_task(
+            name.into(),
+            VibeTaskKind::Periodic,
+            VibeTaskPriority::Normal,
+        )?;
         let registry = Arc::clone(&self.registry);
         let task_for_run = Arc::clone(&task);
         let token = task.token.clone();
         self.handle.spawn(async move {
             if let Err(error) = task_for_run.mark_started() {
-                log_e!("scheduler.schedule_every", DESC, format!("mark started failed: {error}"));
+                log_e!(
+                    "scheduler.schedule_every",
+                    DESC,
+                    format!("mark started failed: {error}")
+                );
                 return;
             }
             loop {
@@ -633,19 +780,35 @@ impl VibeTaskScheduler {
                 if !matches!(state, VibeTaskState::Completed) {
                     // Cancellation or panic terminates the periodic loop.
                     if let Err(error) = task_for_run.finish(state) {
-                        log_e!("scheduler.schedule_every", DESC, format!("finish failed: {error}"));
+                        log_e!(
+                            "scheduler.schedule_every",
+                            DESC,
+                            format!("finish failed: {error}")
+                        );
                     }
                     if let Err(error) = registry.remove(task_for_run.id) {
-                        log_e!("scheduler.schedule_every", DESC, format!("registry remove failed: {error}"));
+                        log_e!(
+                            "scheduler.schedule_every",
+                            DESC,
+                            format!("registry remove failed: {error}")
+                        );
                     }
                     return;
                 }
             }
             if let Err(error) = task_for_run.finish(VibeTaskState::Cancelled) {
-                log_e!("scheduler.schedule_every", DESC, format!("finish failed: {error}"));
+                log_e!(
+                    "scheduler.schedule_every",
+                    DESC,
+                    format!("finish failed: {error}")
+                );
             }
             if let Err(error) = registry.remove(task_for_run.id) {
-                log_e!("scheduler.schedule_every", DESC, format!("registry remove failed: {error}"));
+                log_e!(
+                    "scheduler.schedule_every",
+                    DESC,
+                    format!("registry remove failed: {error}")
+                );
             }
         });
         Ok(VibeTaskHandle { inner: task })
@@ -655,7 +818,11 @@ impl VibeTaskScheduler {
     /// dispatcher exits once already-queued work drains.
     pub(crate) fn shutdown(&self) {
         if let Err(error) = self.registry.cancel_all() {
-            log_e!("scheduler.shutdown", DESC, format!("cancel all failed: {error}"));
+            log_e!(
+                "scheduler.shutdown",
+                DESC,
+                format!("cancel all failed: {error}")
+            );
         }
         if let Ok(mut guard) = self.senders.lock() {
             *guard = None;
@@ -713,4 +880,13 @@ mod tests {
         assert!(h2.await.is_ok());
         assert!(token.is_cancelled());
     }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/api/scheduler_tests.rs"
+    ));
 }
