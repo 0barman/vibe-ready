@@ -7,16 +7,22 @@ use std::fmt;
 
 #[repr(i32)]
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize, Eq, Default)]
+/// Connection lifecycle state used by status integrations.
 pub enum VibeConnectionStatus {
+    /// No connection attempt is active.
     #[default]
     Idle,
 
+    /// A connection attempt is in progress.
     Connecting,
 
+    /// The connection is established.
     Connected,
 
+    /// Disconnect is in progress.
     Disconnecting,
 
+    /// The connection has been closed.
     Disconnected,
 }
 
@@ -51,6 +57,24 @@ fn trans_unreachable(
 }
 
 impl VibeConnectionStatus {
+    /// Applies a validated transition to `new_status`.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(new_status)` when the transition is allowed, or [`VibeEngineError`]
+    /// when the transition is invalid for the current state.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vibe_ready::{VibeConnectionStatus, VibeResult};
+    ///
+    /// # fn demo() -> VibeResult<()> {
+    /// let mut status = VibeConnectionStatus::Idle;
+    /// assert_eq!(status.trans(VibeConnectionStatus::Connecting)?, VibeConnectionStatus::Connecting);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn trans(
         &mut self,
         new_status: VibeConnectionStatus,
@@ -103,4 +127,13 @@ impl VibeConnectionStatus {
         *self = ret?;
         Ok(*self)
     }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/api/connection_status_tests.rs"
+    ));
 }

@@ -4,11 +4,16 @@ use serde::{Deserialize, Serialize};
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize, Eq, PartialOrd, Default)]
 /// Severity level for SDK log records.
 pub enum LogLevel {
+    /// Disable log output.
     None = 0,
+    /// Error-level log entry.
     Error = 1,
+    /// Warning-level log entry.
     Warn = 2,
+    /// Informational log entry.
     #[default]
     Info = 3,
+    /// Debug-level log entry.
     Debug = 4,
 }
 
@@ -34,4 +39,13 @@ impl From<i32> for LogLevel {
             LogLevel::None
         }
     }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/log/log_level_tests.rs"
+    ));
 }

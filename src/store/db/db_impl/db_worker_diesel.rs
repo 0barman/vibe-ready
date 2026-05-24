@@ -2,7 +2,7 @@ use crate::log::log_def::DESC;
 use crate::store::db::db_impl::db_diesel::{DbKvOp, VibeDbSqlite};
 use crate::store::db::enums::db_error::{DbError, VibeDbErrorInfo};
 use crate::store::db::tables::key_val::VibeTableKeyVal;
-use crate::{log_db_e, log_db_r, log_db_t, log_e};
+use crate::{log_e, log_r, log_t};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -39,7 +39,7 @@ impl VibeDbWorkerDiesel {
 
     pub async fn close(&mut self) -> Result<(), DbError> {
         let method_name = "close";
-        log_db_t!(method_name);
+        log_t!(method_name);
         let db_opt_ref = self.db_sqlite.as_ref();
         let Some(db) = db_opt_ref.as_ref() else {
             return Ok(());
@@ -65,7 +65,10 @@ impl VibeDbWorkerDiesel {
     ) -> Result<Option<VibeTableKeyVal>, DbError> {
         let method_name = "get_key_val";
         let db = self.opened_db(method_name)?;
-        self.callback(method_name, db.get_key_val_in_bucket(&user_id, &bucket, &key))
+        self.callback(
+            method_name,
+            db.get_key_val_in_bucket(&user_id, &bucket, &key),
+        )
     }
 
     pub async fn get_key_val_vec(
@@ -146,11 +149,11 @@ impl VibeDbWorkerDiesel {
     ) -> Result<T, DbError> {
         match ret {
             Ok(v) => {
-                log_db_r!(method_name, "code", 0);
+                log_r!(method_name, "code", 0);
                 Ok(v)
             }
             Err(info) => {
-                log_db_e!(
+                log_e!(
                     method_name,
                     "code|location|desc|sql",
                     info.code(),
@@ -167,4 +170,13 @@ impl VibeDbWorkerDiesel {
         log_e!(method_name, "code", err);
         err
     }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/store/db_worker_diesel_tests.rs"
+    ));
 }

@@ -1,7 +1,7 @@
 use crate::api::engine_config::VibeStoreBackend;
 use crate::api::engine_error::{VibeEngineError, VibeEngineErrorCode};
 use crate::log::log_def::DESC;
-use crate::log_db_e;
+use crate::log_e;
 use crate::store::db::sql_def::{start_worker_loop, DbError, DbKvOp, DbWorker};
 use crate::store::db::tables::key_val::{
     VibeKvValue, VibeTableKeyVal, DEFAULT_BUCKET, EXPIRES_AT_NEVER,
@@ -33,10 +33,29 @@ pub struct VibeDbClient {
 }
 
 impl VibeDbClient {
+    /// Creates a database client using the default store backend.
+    ///
+    /// # Returns
+    ///
+    /// A [`VibeDbClient`] with its worker loop initialized.
     pub fn new() -> Self {
         Self::with_backend(VibeStoreBackend::default())
     }
 
+    /// Creates a database client using a specific store backend.
+    ///
+    /// # Returns
+    ///
+    /// A [`VibeDbClient`] with its worker loop initialized for `backend`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vibe_ready::{VibeDbClient, VibeStoreBackend};
+    ///
+    /// let client = VibeDbClient::with_backend(VibeStoreBackend::Noop);
+    /// drop(client);
+    /// ```
     pub fn with_backend(backend: VibeStoreBackend) -> Self {
         let (task_tx, task_rx) = mpsc::channel(DB_CHANNEL_BUFFER_SIZE);
 
@@ -126,6 +145,11 @@ impl VibeDbClient {
 }
 
 impl VibeDbClient {
+    /// Closes the worker channel and database backend.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when closed or already closed, otherwise [`VibeEngineError`].
     pub async fn close(&self) -> Result<(), VibeEngineError> {
         if self.is_closed.swap(true, Ordering::SeqCst) {
             return Ok(());
@@ -133,7 +157,7 @@ impl VibeDbClient {
         let mut sender = self.task_tx.lock().await;
         let ret = sender.close().await;
         if let Err(error) = ret {
-            log_db_e!(
+            log_e!(
                 "close",
                 DESC,
                 format!("close sender error: {}", error.to_string())
@@ -144,6 +168,11 @@ impl VibeDbClient {
         Ok(())
     }
 
+    /// Opens the configured backend at `store_path` for `user_id`.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the backend is ready, or [`VibeEngineError`] on open failure.
     pub async fn try_open(
         &self,
         store_path: PathBuf,
@@ -170,27 +199,57 @@ impl VibeDbClient {
 // Backward compatible API: routes to the default bucket.
 // ---------------------------------------------------------------------------
 impl VibeDbClient {
+    /// Sets a value in the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the value is written.
     pub async fn set(&self, key: String, value: VibeKvValue) -> Result<(), VibeEngineError> {
         self.set_in_bucket(DEFAULT_BUCKET.to_string(), key, value, EXPIRES_AT_NEVER)
             .await
     }
 
+    /// Sets a string value in the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the value is written.
     pub async fn set_str(&self, key: String, value: String) -> Result<(), VibeEngineError> {
         self.set(key, VibeKvValue::String(value)).await
     }
 
+    /// Sets a boolean value in the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the value is written.
     pub async fn set_bool(&self, key: String, value: bool) -> Result<(), VibeEngineError> {
         self.set(key, VibeKvValue::Bool(value)).await
     }
 
+    /// Sets an `i32` value in the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the value is written.
     pub async fn set_i32(&self, key: String, value: i32) -> Result<(), VibeEngineError> {
         self.set(key, VibeKvValue::I32(value)).await
     }
 
+    /// Gets a value from the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(Some(value))`, `Ok(None)`, or [`VibeEngineError`].
     pub async fn get(&self, key: String) -> Result<Option<VibeKvValue>, VibeEngineError> {
         self.get_in_bucket(DEFAULT_BUCKET.to_string(), key).await
     }
 
+    /// Gets a string value from the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(Some(String))` only when the value is a string.
     pub async fn get_str(&self, key: String) -> Result<Option<String>, VibeEngineError> {
         match self.get(key).await? {
             Some(VibeKvValue::String(value)) => Ok(Some(value)),
@@ -198,6 +257,11 @@ impl VibeDbClient {
         }
     }
 
+    /// Gets a boolean value from the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(Some(bool))` only when the value is a boolean.
     pub async fn get_bool(&self, key: String) -> Result<Option<bool>, VibeEngineError> {
         match self.get(key).await? {
             Some(VibeKvValue::Bool(value)) => Ok(Some(value)),
@@ -205,6 +269,11 @@ impl VibeDbClient {
         }
     }
 
+    /// Gets an `i32` value from the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(Some(i32))` only when the value is an `i32`.
     pub async fn get_i32(&self, key: String) -> Result<Option<i32>, VibeEngineError> {
         match self.get(key).await? {
             Some(VibeKvValue::I32(value)) => Ok(Some(value)),
@@ -212,19 +281,39 @@ impl VibeDbClient {
         }
     }
 
+    /// Removes a key from the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` when the key existed and was removed.
     pub async fn remove(&self, key: String) -> Result<bool, VibeEngineError> {
         self.remove_in_bucket(DEFAULT_BUCKET.to_string(), key).await
     }
 
+    /// Checks whether a key exists in the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` when the key exists and is not expired.
     pub async fn contains(&self, key: String) -> Result<bool, VibeEngineError> {
         self.contains_in_bucket(DEFAULT_BUCKET.to_string(), key)
             .await
     }
 
+    /// Lists keys in the default bucket.
+    ///
+    /// # Returns
+    ///
+    /// A vector of key names.
     pub async fn list_keys(&self) -> Result<Vec<String>, VibeEngineError> {
         self.list_keys_in_bucket(DEFAULT_BUCKET.to_string()).await
     }
 
+    /// Returns the user id associated with the open backend.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(String)` after [`VibeDbClient::try_open`], otherwise a database-not-open error.
     pub async fn current_user_id(&self) -> Result<String, VibeEngineError> {
         self.user_id
             .read()
@@ -238,6 +327,11 @@ impl VibeDbClient {
 // Bucket-aware API.
 // ---------------------------------------------------------------------------
 impl VibeDbClient {
+    /// Sets a value in a named bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the value is written.
     pub async fn set_in_bucket(
         &self,
         bucket: String,
@@ -251,6 +345,11 @@ impl VibeDbClient {
         self.insert_or_replace_key_val(row).await
     }
 
+    /// Gets a value from a named bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(Some(value))`, `Ok(None)` for missing/expired keys, or an error.
     pub async fn get_in_bucket(
         &self,
         bucket: String,
@@ -260,15 +359,14 @@ impl VibeDbClient {
         let user_id = self.current_user_id().await?;
         let row = self.get_key_val(user_id, bucket, key).await?;
         let now = crate::platform::now();
-        Ok(row.and_then(|r| {
-            if r.is_expired(now) {
-                None
-            } else {
-                r.value()
-            }
-        }))
+        Ok(row.and_then(|r| if r.is_expired(now) { None } else { r.value() }))
     }
 
+    /// Removes a key from a named bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` when the key existed and was removed.
     pub async fn remove_in_bucket(
         &self,
         bucket: String,
@@ -279,6 +377,11 @@ impl VibeDbClient {
         self.remove_key_val(user_id, bucket, key).await
     }
 
+    /// Checks whether a key exists in a named bucket.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` when the key exists and is not expired.
     pub async fn contains_in_bucket(
         &self,
         bucket: String,
@@ -292,6 +395,11 @@ impl VibeDbClient {
         Ok(row.map(|r| !r.is_expired(now)).unwrap_or(false))
     }
 
+    /// Lists keys in a named bucket.
+    ///
+    /// # Returns
+    ///
+    /// A vector of key names.
     pub async fn list_keys_in_bucket(
         &self,
         bucket: String,
@@ -300,6 +408,11 @@ impl VibeDbClient {
         self.list_key_vals(user_id, bucket).await
     }
 
+    /// Reads multiple keys from a named bucket.
+    ///
+    /// # Returns
+    ///
+    /// A vector of `(key, value)` pairs for existing, non-expired keys.
     pub async fn get_many_in_bucket(
         &self,
         bucket: String,
@@ -324,6 +437,11 @@ impl VibeDbClient {
             .collect())
     }
 
+    /// Writes multiple values to a named bucket in one transaction.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the batch commit succeeds.
     pub async fn set_many_in_bucket(
         &self,
         bucket: String,
@@ -344,6 +462,11 @@ impl VibeDbClient {
         self.transaction_ops(ops).await
     }
 
+    /// Removes multiple keys from a named bucket in one transaction.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the batch commit succeeds.
     pub async fn remove_many_in_bucket(
         &self,
         bucket: String,
@@ -365,6 +488,10 @@ impl VibeDbClient {
     }
 
     /// Apply pre-built ops (already user-scoped) inside one DB transaction.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when every operation commits atomically.
     pub async fn transaction_ops(&self, ops: Vec<DbKvOp>) -> Result<(), VibeEngineError> {
         if ops.is_empty() {
             return Ok(());
@@ -379,6 +506,11 @@ impl VibeDbClient {
         self.execute(task, resp_rx).await
     }
 
+    /// Purges expired rows from the backend.
+    ///
+    /// # Returns
+    ///
+    /// Number of rows removed by the backend.
     pub async fn purge_expired(&self) -> Result<usize, VibeEngineError> {
         let now = crate::platform::now();
         let (resp_tx, resp_rx) = oneshot::channel();
@@ -396,6 +528,11 @@ impl VibeDbClient {
 // Lower level row APIs (kept for advanced integrations).
 // ---------------------------------------------------------------------------
 impl VibeDbClient {
+    /// Inserts or replaces a low-level key-value row.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the row is written.
     pub async fn insert_or_replace_key_val(
         &self,
         table: VibeTableKeyVal,
@@ -412,6 +549,11 @@ impl VibeDbClient {
         self.execute(task, resp_rx).await
     }
 
+    /// Gets a low-level key-value row.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(Some(row))`, `Ok(None)`, or [`VibeEngineError`].
     pub async fn get_key_val(
         &self,
         user_id: String,
@@ -430,6 +572,11 @@ impl VibeDbClient {
         self.execute(task, resp_rx).await
     }
 
+    /// Gets multiple low-level key-value rows.
+    ///
+    /// # Returns
+    ///
+    /// A vector of matching rows.
     pub async fn get_key_val_vec(
         &self,
         user_id: String,
@@ -448,6 +595,11 @@ impl VibeDbClient {
         self.execute(task, resp_rx).await
     }
 
+    /// Removes a low-level key-value row.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` when a row was removed.
     pub async fn remove_key_val(
         &self,
         user_id: String,
@@ -466,6 +618,11 @@ impl VibeDbClient {
         self.execute(task, resp_rx).await
     }
 
+    /// Checks whether a low-level key-value row exists.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` when the row exists.
     pub async fn contains_key_val(
         &self,
         user_id: String,
@@ -484,6 +641,11 @@ impl VibeDbClient {
         self.execute(task, resp_rx).await
     }
 
+    /// Lists low-level key names for a user and bucket.
+    ///
+    /// # Returns
+    ///
+    /// A vector of key names.
     pub async fn list_key_vals(
         &self,
         user_id: String,
@@ -509,4 +671,13 @@ fn validate_key(key: &str) -> Result<(), VibeEngineError> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/store/db_client_tests.rs"
+    ));
 }

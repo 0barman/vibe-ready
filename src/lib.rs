@@ -1,7 +1,34 @@
+//! Project foundations for vibe-coding applications.
+//!
+//! `vibe-ready` provides a small runtime layer for applications that need a
+//! ready-to-use engine, async task execution, scheduled work, structured
+//! logging, and a key-value store without assembling those pieces from scratch.
+//! Most applications start by building a [`VibeEngineConfig`], creating a
+//! [`VibeEngine`], and then using the engine for tasks, callbacks, and storage.
+//!
+//! # Examples
+//!
+//! ```no_run
+//! use vibe_ready::{VibeEngine, VibeEngineConfig, VibePlatformType, VibeResult};
+//!
+//! fn main() -> VibeResult<()> {
+//!     let config = VibeEngineConfig::builder()
+//!         .platform(VibePlatformType::MacOS)
+//!         .app_name("demo-app")
+//!         .namespace("examples")
+//!         .build();
+//!
+//!     let engine = VibeEngine::create(config)?;
+//!     engine.store().set_str("status", "ready")?;
+//!     engine.destroy_with_timeout(std::time::Duration::from_secs(2))?;
+//!     Ok(())
+//! }
+//! ```
+
 pub(crate) mod api;
 pub(crate) mod log;
 pub(crate) mod net;
-pub(crate) mod platform;
+pub mod platform;
 pub(crate) mod status;
 pub(crate) mod store;
 pub(crate) mod utils;
@@ -32,12 +59,18 @@ pub use api::engine_config::VibeRuntimeConfig;
 pub use api::engine_config::VibeStoreBackend;
 /// Storage behavior used by the SDK.
 pub use api::engine_config::VibeStoreConfig;
+/// Low-level context shared by engine services.
+pub use api::engine_context::VibeEngineContext;
 /// Error type returned by vibe-ready operations.
 pub use api::engine_error::VibeEngineError;
 /// Stable error code used by [`VibeError`].
 pub use api::engine_error::VibeEngineErrorCode as VibeErrorCode;
 /// High-level error category returned by [`VibeEngineError`].
 pub use api::engine_error::VibeErrorKind;
+/// Callback executor returned by [`VibeEngineExecutor::callback`].
+pub use api::engine_executor::VibeCallbackExecutor;
+/// Task executor used internally by [`VibeEngine`] and exposed for advanced integrations.
+pub use api::engine_executor::VibeEngineExecutor;
 /// Platform identifier used by [`VibeEngineConfig`].
 pub use api::platform_type::VibePlatformType;
 /// Cooperative cancellation token consumed by scheduled tasks.
@@ -48,32 +81,38 @@ pub use api::scheduler::VibeTaskHandle;
 pub use api::scheduler::VibeTaskInfo;
 /// Origin category of a scheduler-tracked task.
 pub use api::scheduler::VibeTaskKind;
-/// Priority lane used by the B9 task scheduler.
-pub use api::scheduler::VibeTaskPriority;
 /// Diagnostic panel listing live scheduler tasks.
 pub use api::scheduler::VibeTaskPanel;
+/// Priority lane used by the task scheduler.
+pub use api::scheduler::VibeTaskPriority;
 /// Lifecycle state of a scheduler-tracked task.
 pub use api::scheduler::VibeTaskState;
 /// Log listener callback type.
 pub use log::log_def::LogListener as VibeLogListener;
-/// Log record source category.
-pub use log::log_def::LogType as VibeLogType;
 /// Log entry delivered to log listeners.
 pub use log::log_def::VibeLogInfo;
+/// Standard log field for error codes.
+pub use log::log_def::CODE_STR;
+/// Standard log field for descriptions.
+pub use log::log_def::DESC;
+/// Standard log field for return values.
+pub use log::log_def::RET_STR;
 /// Log severity used by the SDK.
 pub use log::log_level::LogLevel as VibeLogLevel;
+/// Low-level logger used by the engine log subsystem.
+pub use log::logger::VibeLogger;
 /// Runtime status manager exposed for advanced integrations.
 pub use status::status_manager::VibeStatusManager;
 /// Database client exposed for advanced integrations.
 pub use store::db::db_client::VibeDbClient;
+/// Database error category used by storage backends.
+pub use store::db::enums::db_error::DbError;
 /// Database error details exposed for advanced integrations.
 pub use store::db::enums::db_error::VibeDbErrorInfo;
 /// High-level value accepted by the SDK key-value store.
 pub use store::db::tables::key_val::VibeKvValue;
 /// Key-value row returned by advanced database APIs.
 pub use store::db::tables::key_val::VibeTableKeyVal;
-/// High-level key-value store facade.
-pub use store::kv_store::VibeKvStore;
 /// Bucket-scoped view of [`VibeKvStore`].
 pub use store::kv_store::VibeKvBucket;
 /// Change notification dispatched to KV listeners.
@@ -82,6 +121,8 @@ pub use store::kv_store::VibeKvChange;
 pub use store::kv_store::VibeKvChangeKind;
 /// Cancellation handle returned by `VibeKvStore::on_change`.
 pub use store::kv_store::VibeKvListenerId;
+/// High-level key-value store facade.
+pub use store::kv_store::VibeKvStore;
 /// Buffered transaction handle used inside `VibeKvStore::transaction`.
 pub use store::kv_store::VibeKvTx;
 
@@ -97,13 +138,13 @@ pub type VibeError = VibeEngineError;
 /// Common imports for applications using vibe-ready.
 pub mod prelude {
     pub use crate::{
-        VibeAppConfig, VibeBackupStrategy, VibeCancellationToken, VibeCapabilities,
-        VibeConnectionStatus, VibeEngine, VibeEngineConfig, VibeEngineConfigBuilder,
-        VibeEngineError, VibeEngineState, VibeError, VibeErrorCode, VibeErrorKind, VibeKvBucket,
-        VibeKvChange, VibeKvChangeKind, VibeKvListenerId, VibeKvStore, VibeKvTx, VibeKvValue,
-        VibeLogBackend, VibeLogConfig, VibeLogInfo, VibeLogLevel, VibeLogListener,
-        VibePlatformType, VibeResult, VibeRuntimeConfig, VibeStoreBackend, VibeStoreConfig,
-        VibeTableKeyVal, VibeTaskHandle, VibeTaskInfo, VibeTaskKind, VibeTaskPanel,
-        VibeTaskPriority, VibeTaskState,
+        DbError, VibeAppConfig, VibeBackupStrategy, VibeCallbackExecutor, VibeCancellationToken,
+        VibeCapabilities, VibeConnectionStatus, VibeEngine, VibeEngineConfig,
+        VibeEngineConfigBuilder, VibeEngineContext, VibeEngineError, VibeEngineExecutor,
+        VibeEngineState, VibeError, VibeErrorCode, VibeErrorKind, VibeKvBucket, VibeKvChange,
+        VibeKvChangeKind, VibeKvListenerId, VibeKvStore, VibeKvTx, VibeKvValue, VibeLogBackend,
+        VibeLogConfig, VibeLogInfo, VibeLogLevel, VibeLogListener, VibeLogger, VibePlatformType,
+        VibeResult, VibeRuntimeConfig, VibeStoreBackend, VibeStoreConfig, VibeTableKeyVal,
+        VibeTaskHandle, VibeTaskInfo, VibeTaskKind, VibeTaskPanel, VibeTaskPriority, VibeTaskState,
     };
 }

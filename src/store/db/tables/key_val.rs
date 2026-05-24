@@ -39,16 +39,36 @@ diesel::table! {
 /// Value stored in the high-level key-value store.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum VibeKvValue {
+    /// UTF-8 string value.
     String(String),
+    /// Boolean value.
     Bool(bool),
+    /// 32-bit signed integer value.
     I32(i32),
+    /// 64-bit signed integer value.
     I64(i64),
+    /// 64-bit floating-point value.
     F64(f64),
+    /// Binary value.
     Bytes(Vec<u8>),
+    /// JSON value.
     Json(serde_json::Value),
 }
 
 impl VibeKvValue {
+    /// Returns the inner string when this value is [`VibeKvValue::String`].
+    ///
+    /// # Returns
+    ///
+    /// `Some(&str)` for string values, otherwise `None`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vibe_ready::VibeKvValue;
+    ///
+    /// assert_eq!(VibeKvValue::from("ready").as_str(), Some("ready"));
+    /// ```
     pub fn as_str(&self) -> Option<&str> {
         match self {
             Self::String(value) => Some(value.as_str()),
@@ -56,6 +76,11 @@ impl VibeKvValue {
         }
     }
 
+    /// Returns the inner boolean when this value is [`VibeKvValue::Bool`].
+    ///
+    /// # Returns
+    ///
+    /// `Some(bool)` for boolean values, otherwise `None`.
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             Self::Bool(value) => Some(*value),
@@ -63,6 +88,11 @@ impl VibeKvValue {
         }
     }
 
+    /// Returns the inner integer when this value is [`VibeKvValue::I32`].
+    ///
+    /// # Returns
+    ///
+    /// `Some(i32)` for `i32` values, otherwise `None`.
     pub fn as_i32(&self) -> Option<i32> {
         match self {
             Self::I32(value) => Some(*value),
@@ -70,6 +100,11 @@ impl VibeKvValue {
         }
     }
 
+    /// Returns the inner integer when this value is [`VibeKvValue::I64`].
+    ///
+    /// # Returns
+    ///
+    /// `Some(i64)` for `i64` values, otherwise `None`.
     pub fn as_i64(&self) -> Option<i64> {
         match self {
             Self::I64(value) => Some(*value),
@@ -77,6 +112,11 @@ impl VibeKvValue {
         }
     }
 
+    /// Returns the inner float when this value is [`VibeKvValue::F64`].
+    ///
+    /// # Returns
+    ///
+    /// `Some(f64)` for `f64` values, otherwise `None`.
     pub fn as_f64(&self) -> Option<f64> {
         match self {
             Self::F64(value) => Some(*value),
@@ -84,6 +124,11 @@ impl VibeKvValue {
         }
     }
 
+    /// Returns the inner bytes when this value is [`VibeKvValue::Bytes`].
+    ///
+    /// # Returns
+    ///
+    /// `Some(&[u8])` for byte values, otherwise `None`.
     pub fn as_bytes(&self) -> Option<&[u8]> {
         match self {
             Self::Bytes(value) => Some(value.as_slice()),
@@ -91,6 +136,11 @@ impl VibeKvValue {
         }
     }
 
+    /// Returns the inner JSON value when this value is [`VibeKvValue::Json`].
+    ///
+    /// # Returns
+    ///
+    /// `Some(&serde_json::Value)` for JSON values, otherwise `None`.
     pub fn as_json(&self) -> Option<&serde_json::Value> {
         match self {
             Self::Json(value) => Some(value),
@@ -158,8 +208,15 @@ impl From<serde_json::Value> for VibeKvValue {
     derive(diesel::Queryable, diesel::Selectable, diesel::Insertable)
 )]
 #[cfg_attr(feature = "store-diesel-sqlite", diesel(table_name = vibe_ready_key_val))]
-#[cfg_attr(feature = "store-diesel-sqlite", diesel(primary_key(user_id, bucket, key)))]
+#[cfg_attr(
+    feature = "store-diesel-sqlite",
+    diesel(primary_key(user_id, bucket, key))
+)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Database row representation for a key-value item.
+///
+/// Applications usually work with [`VibeKvStore`](crate::VibeKvStore); this
+/// row type is exposed for advanced database integrations.
 pub struct VibeTableKeyVal {
     pub(crate) user_id: String,
     pub(crate) bucket: String,
@@ -176,13 +233,21 @@ pub struct VibeTableKeyVal {
 }
 
 impl VibeTableKeyVal {
-    /// Build a row using the [`DEFAULT_BUCKET`] and no TTL.
+    /// Build a row using the default bucket and no TTL.
+    ///
+    /// # Returns
+    ///
+    /// A [`VibeTableKeyVal`] row targeting the default bucket.
     pub fn new(user_id: &str, key: &str, value: VibeKvValue) -> Self {
         Self::new_in_bucket(user_id, DEFAULT_BUCKET, key, value, EXPIRES_AT_NEVER)
     }
 
     /// Build a row with explicit bucket and optional `expires_at_ms`
     /// (`0` means no expiry).
+    ///
+    /// # Returns
+    ///
+    /// A [`VibeTableKeyVal`] row targeting the specified bucket.
     pub fn new_in_bucket(
         user_id: &str,
         bucket: &str,
@@ -242,38 +307,83 @@ impl VibeTableKeyVal {
         }
     }
 
+    /// Builds a default-bucket string row.
+    ///
+    /// # Returns
+    ///
+    /// A [`VibeTableKeyVal`] containing a string value.
     pub fn new_with_str(user_id: &str, key: &str, val: &str) -> Self {
         Self::new(user_id, key, VibeKvValue::String(val.to_string()))
     }
 
+    /// Builds a default-bucket boolean row.
+    ///
+    /// # Returns
+    ///
+    /// A [`VibeTableKeyVal`] containing a boolean value.
     pub fn new_with_bool(user_id: &str, key: &str, val: bool) -> Self {
         Self::new(user_id, key, VibeKvValue::Bool(val))
     }
 
+    /// Builds a default-bucket 32-bit integer row.
+    ///
+    /// # Returns
+    ///
+    /// A [`VibeTableKeyVal`] containing an `i32` value.
     pub fn new_with_i32(user_id: &str, key: &str, val: i32) -> Self {
         Self::new(user_id, key, VibeKvValue::I32(val))
     }
 
+    /// Returns the row key.
+    ///
+    /// # Returns
+    ///
+    /// A borrowed key string.
     pub fn key(&self) -> &str {
         self.key.as_str()
     }
 
+    /// Returns the row user id.
+    ///
+    /// # Returns
+    ///
+    /// A borrowed user id string.
     pub fn user_id(&self) -> &str {
         self.user_id.as_str()
     }
 
+    /// Returns the row bucket name.
+    ///
+    /// # Returns
+    ///
+    /// A borrowed bucket string.
     pub fn bucket(&self) -> &str {
         self.bucket.as_str()
     }
 
+    /// Returns the expiry timestamp.
+    ///
+    /// # Returns
+    ///
+    /// Unix milliseconds, or `0` when the row never expires.
     pub fn expires_at_ms(&self) -> i64 {
         self.expires_at_ms
     }
 
+    /// Checks whether the row is expired at `now_ms`.
+    ///
+    /// # Returns
+    ///
+    /// `true` when the row has an expiry timestamp and `now_ms` is at or past it.
     pub fn is_expired(&self, now_ms: i64) -> bool {
         self.expires_at_ms != EXPIRES_AT_NEVER && now_ms >= self.expires_at_ms
     }
 
+    /// Converts the row payload back into a high-level value.
+    ///
+    /// # Returns
+    ///
+    /// `Some(VibeKvValue)` for known value types, otherwise `None`.
     pub fn value(&self) -> Option<VibeKvValue> {
         match self.value_type {
             VALUE_TYPE_STR => Some(VibeKvValue::String(self.value_str.clone())),
@@ -289,6 +399,11 @@ impl VibeTableKeyVal {
         }
     }
 
+    /// Returns the row payload as a string if its type is string.
+    ///
+    /// # Returns
+    ///
+    /// `Some(&str)` for string rows, otherwise `None`.
     pub fn get_value_str(&self) -> Option<&str> {
         if self.value_type == VALUE_TYPE_STR {
             Some(self.value_str.as_str())
@@ -297,6 +412,11 @@ impl VibeTableKeyVal {
         }
     }
 
+    /// Returns the row payload as a boolean if its type is boolean.
+    ///
+    /// # Returns
+    ///
+    /// `Some(bool)` for boolean rows, otherwise `None`.
     pub fn get_value_bool(&self) -> Option<bool> {
         if self.value_type == VALUE_TYPE_BOOL {
             Some(self.value_bool)
@@ -305,6 +425,11 @@ impl VibeTableKeyVal {
         }
     }
 
+    /// Returns the row payload as an `i32` if its type is `i32`.
+    ///
+    /// # Returns
+    ///
+    /// `Some(i32)` for `i32` rows, otherwise `None`.
     pub fn get_value_i32(&self) -> Option<i32> {
         if self.value_type == VALUE_TYPE_I32 {
             Some(self.value_i32)
@@ -312,4 +437,13 @@ impl VibeTableKeyVal {
             None
         }
     }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/store/key_val_tests.rs"
+    ));
 }

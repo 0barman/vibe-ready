@@ -5,6 +5,11 @@ use crate::status::status_manager::VibeStatusManager;
 use crate::store::db::db_client::VibeDbClient;
 use std::sync::Arc;
 
+/// Low-level context shared by engine services.
+///
+/// Most applications should use [`crate::VibeEngine`] instead. This type is
+/// exposed for advanced integrations that need direct access to the database
+/// or logging clients initialized by the engine.
 pub struct VibeEngineContext {
     status_manager: VibeStatusManager,
     engine_config: VibeEngineConfig,
@@ -13,6 +18,24 @@ pub struct VibeEngineContext {
 }
 
 impl VibeEngineContext {
+    /// Creates a context from validated engine configuration.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(VibeEngineContext)` when log and work stores open successfully, or
+    /// [`VibeEngineError`] when initialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use vibe_ready::{VibeEngineConfig, VibeEngineContext, VibeResult};
+    ///
+    /// # fn demo() -> VibeResult<()> {
+    /// let context = VibeEngineContext::new(VibeEngineConfig::builder().build())?;
+    /// futures::executor::block_on(context.close())?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn new(config: VibeEngineConfig) -> Result<Self, VibeEngineError> {
         let log_config = config.log_config();
         let store_config = config.store_config();
@@ -60,14 +83,38 @@ impl VibeEngineContext {
 }
 
 impl VibeEngineContext {
+    /// Returns the initialized log client.
+    ///
+    /// # Returns
+    ///
+    /// A shared reference to the internal logger used by [`crate::VibeEngine`].
     pub fn log_db_client(&self) -> &Arc<VibeLogger> {
         &self.log_db_client
     }
 
+    /// Returns the initialized work-store database client.
+    ///
+    /// # Returns
+    ///
+    /// A reference to the [`crate::VibeDbClient`] used by high-level storage APIs.
     pub fn db_client(&self) -> &VibeDbClient {
         &self.db_client
     }
 
+    /// Returns the validated engine configuration used to create this context.
+    ///
+    /// # Returns
+    ///
+    /// A reference to the immutable [`VibeEngineConfig`] stored by the context.
+    pub fn engine_config(&self) -> &VibeEngineConfig {
+        &self.engine_config
+    }
+
+    /// Closes listeners, work-store resources, and log-store resources.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when all resources close, or [`VibeEngineError`] on close failure.
     pub async fn close(&self) -> Result<(), VibeEngineError> {
         self.status_manager
             .set_connection_status_listener(None)
@@ -78,4 +125,13 @@ impl VibeEngineContext {
         })?;
         Ok(())
     }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/api/engine_context_tests.rs"
+    ));
 }

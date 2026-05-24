@@ -62,3 +62,12 @@ mod tests {
         assert!(!capabilities.metrics);
     }
 }
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/api/capabilities_tests.rs"
+    ));
+}

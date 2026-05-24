@@ -1,7 +1,7 @@
 use crate::log::log_def::VibeLogInfo;
 use crate::log::log_def::DESC;
 use crate::log::table_log::{vibe_ready_log, VibeTableLog, TABLE_NAME_LOG};
-use crate::log_db_e;
+use crate::log_e;
 use crate::store::db::db_common;
 use crate::store::db::db_common::{LOG_DB_NAME, LOG_ENC_DB_NAME};
 use crate::store::db::enums::db_error::VibeDbErrorInfo;
@@ -22,6 +22,7 @@ enum ChannelData {
 }
 
 pub struct VibeDbLog {
+    #[allow(dead_code)]
     pub db_lock: Arc<Mutex<SqliteConnection>>,
     tx_4_log_writer: std::sync::mpsc::Sender<ChannelData>,
 }
@@ -116,12 +117,12 @@ impl VibeDbLog {
 
         let store_path_str = store_path.to_str().ok_or_else(|| {
             let err_msg = "log db path is null".to_string();
-            log_db_e!("get_default_db", DESC, err_msg);
+            log_e!("get_default_db", DESC, err_msg);
             VibeDbErrorInfo::from_io(err_msg)
         })?;
 
         if is_encrypt {
-            log_db_e!(
+            log_e!(
                 "log_try_open",
                 DESC,
                 "diesel sqlite does not enable SQLCipher encryption by default"
@@ -169,4 +170,13 @@ impl VibeDbLog {
         let _ = self.tx_4_log_writer.send(ChannelData::_STOP);
         Ok(())
     }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test/unit/log/log_diesel_tests.rs"
+    ));
 }
