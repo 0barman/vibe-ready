@@ -101,6 +101,24 @@ pub use log::log_def::RET_STR;
 pub use log::log_level::LogLevel as VibeLogLevel;
 /// Low-level logger used by the engine log subsystem.
 pub use log::logger::VibeLogger;
+/// HTTP client foundation for outbound requests (requires `net-http`).
+#[cfg(feature = "net-http")]
+pub use net::VibeHttpClient;
+/// Builder for [`VibeHttpClient`] (requires `net-http`).
+#[cfg(feature = "net-http")]
+pub use net::VibeHttpClientBuilder;
+/// HTTP method used by [`VibeHttpClient`] (requires `net-http`).
+#[cfg(feature = "net-http")]
+pub use net::VibeHttpMethod;
+/// Configurable HTTP request (requires `net-http`).
+#[cfg(feature = "net-http")]
+pub use net::VibeHttpRequest;
+/// HTTP response (requires `net-http`).
+#[cfg(feature = "net-http")]
+pub use net::VibeHttpResponse;
+/// Retry and backoff policy for HTTP requests (requires `net-http`).
+#[cfg(feature = "net-http")]
+pub use net::VibeRetryPolicy;
 /// Runtime status manager exposed for advanced integrations.
 pub use status::status_manager::VibeStatusManager;
 /// Database client exposed for advanced integrations.
@@ -146,5 +164,11 @@ pub mod prelude {
         VibeLogConfig, VibeLogInfo, VibeLogLevel, VibeLogListener, VibeLogger, VibePlatformType,
         VibeResult, VibeRuntimeConfig, VibeStoreBackend, VibeStoreConfig, VibeTableKeyVal,
         VibeTaskHandle, VibeTaskInfo, VibeTaskKind, VibeTaskPanel, VibeTaskPriority, VibeTaskState,
+    };
+
+    #[cfg(feature = "net-http")]
+    pub use crate::{
+        VibeHttpClient, VibeHttpClientBuilder, VibeHttpMethod, VibeHttpRequest, VibeHttpResponse,
+        VibeRetryPolicy,
     };
 }

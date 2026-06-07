@@ -132,6 +132,7 @@ Always call engine.destroy_with_timeout before shutdown in examples and tests.
 | Platform time/spawn helpers | `vibe_ready::platform::{now, sleep, spawn}` |
 | Advanced storage access | `VibeDbClient`, `VibeTableKeyVal`, `VibeDbErrorInfo` |
 | JSON/display utility macros | `array_to_json_string!`, `obj_array_to_json_string!`, `basic_type_map_to_json_string!`, `impl_display_json!` |
+| Outbound HTTP / call external APIs | `VibeHttpClient` (feature `net-http`) |
 
 ## Core Concepts
 
@@ -541,6 +542,40 @@ async fn status_flow() -> VibeResult<()> {
 }
 ```
 
+### Networking (HTTP)
+
+Enable the `net-http` feature to get `VibeHttpClient`, an async HTTP client with
+timeouts, retry/backoff, connection pooling, JSON helpers, and auth headers.
+
+```toml
+[dependencies]
+vibe-ready = { version = "0.1.1", features = ["net-http"] }
+```
+
+```rust
+# #[cfg(feature = "net-http")]
+# async fn demo() -> vibe_ready::VibeResult<()> {
+use vibe_ready::{VibeHttpClient, VibeRetryPolicy};
+
+let client = VibeHttpClient::builder()
+    .bearer_auth("token")
+    .retry(VibeRetryPolicy::default())
+    .build()?;
+
+let response = client
+    .get("https://api.example.com/health")
+    .await?
+    .error_for_status()?;
+let body: serde_json::Value = response.json().await?;
+# let _ = body;
+# Ok(())
+# }
+```
+
+You can also reach a shared client through the engine with `engine.http()`.
+Both the client and per-request builders expose `bearer_auth`, `basic_auth`,
+`header`, `query`, `json`, `timeout`, and `retry`.
+
 ### Advanced Database APIs
 
 Prefer `VibeKvStore` for application state. Use `VibeDbClient` only when an integration needs lower-level row access or custom database operations.
@@ -574,6 +609,8 @@ Advanced row types:
 | `store-diesel-sqlite` | Yes | Enables Diesel SQLite work/key-value persistence. |
 | `log-noop` | No | Compatibility feature for no-op log behavior. |
 | `store-noop` | No | Compatibility feature for no-op store behavior. |
+| `net-http` | No | Enables `VibeHttpClient` (reqwest + rustls) for outbound HTTP. |
+| `net-ws` | No | Reserved for a future WebSocket client. |
 
 No-op backends are always available at runtime through `VibeLogBackend::Noop` and `VibeStoreBackend::Noop`. They are useful for tests, examples, and generated prototypes.
 
@@ -699,6 +736,7 @@ Important exported types:
 - Logging: `VibeLogConfig`, `VibeLogBackend`, `VibeLogInfo`, `VibeLogLevel`, `VibeLogListener`, `VibeLogger`, `CODE_STR`, `DESC`, `RET_STR`.
 - Errors: `VibeEngineError`, `VibeError`, `VibeErrorCode`, `VibeErrorKind`, `VibeResult`.
 - Platform and status: `VibePlatformType`, `VibeConnectionStatus`, `VibeStatusManager`, `VibeCapabilities`.
+- Networking (feature `net-http`): `VibeHttpClient`, `VibeHttpClientBuilder`, `VibeHttpRequest`, `VibeHttpResponse`, `VibeHttpMethod`, `VibeRetryPolicy`.
 
 ## Shutdown Pattern
 

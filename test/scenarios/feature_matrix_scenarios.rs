@@ -16,7 +16,10 @@ fn capabilities_match_compile_time_feature_matrix() {
         cfg!(feature = "store-diesel-sqlite")
     );
     assert_eq!(capabilities.wasm, cfg!(target_arch = "wasm32"));
-    assert!(!capabilities.network);
+    assert_eq!(
+        capabilities.network,
+        cfg!(feature = "net-http") || cfg!(feature = "net-ws")
+    );
     assert!(!capabilities.encryption);
     assert!(!capabilities.tracing);
     assert!(!capabilities.metrics);

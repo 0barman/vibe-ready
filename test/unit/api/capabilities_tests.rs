@@ -6,7 +6,10 @@ fn capabilities_default_current_and_json_are_stable() {
     assert_eq!(current.log_store, cfg!(feature = "log-diesel"));
     assert_eq!(current.work_store, cfg!(feature = "store-diesel-sqlite"));
     assert_eq!(current.wasm, cfg!(target_arch = "wasm32"));
-    assert!(!current.network);
+    assert_eq!(
+        current.network,
+        cfg!(feature = "net-http") || cfg!(feature = "net-ws")
+    );
     assert!(!current.encryption);
     assert!(!current.tracing);
     assert!(!current.metrics);
