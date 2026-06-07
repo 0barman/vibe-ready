@@ -54,6 +54,8 @@ pub struct VibeEngine {
     state: Arc<AtomicU8>,
     destroy_lock: Arc<Mutex<()>>,
     scheduler: Arc<VibeTaskScheduler>,
+    #[cfg(feature = "net-http")]
+    http: Arc<std::sync::OnceLock<crate::net::VibeHttpClient>>,
 }
 
 impl VibeEngine {
@@ -149,6 +151,38 @@ impl VibeEngine {
     /// ```
     pub fn store(&self) -> VibeKvStore {
         VibeKvStore::new(self.ctx.db_client().clone(), self.executor.clone())
+    }
+
+    /// Returns a shared HTTP client bound to this engine, building it on first use.
+    ///
+    /// The client is created once with default configuration and cached; later
+    /// calls return cheap clones that share the same connection pool. Requires
+    /// the `net-http` feature.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(VibeHttpClient)` on success, or [`VibeEngineError`] if the client
+    /// could not be constructed.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "net-http")]
+    /// # async fn demo(engine: &vibe_ready::VibeEngine) -> vibe_ready::VibeResult<()> {
+    /// let client = engine.http()?;
+    /// let response = client.get("https://example.com").await?;
+    /// assert!(response.status() > 0);
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(feature = "net-http")]
+    pub fn http(&self) -> Result<crate::net::VibeHttpClient, VibeEngineError> {
+        if let Some(client) = self.http.get() {
+            return Ok(client.clone());
+        }
+        let client = crate::net::VibeHttpClient::new()?;
+        let _ = self.http.set(client.clone());
+        Ok(self.http.get().cloned().unwrap_or(client))
     }
 
     /// Runs a future on the engine runtime and waits for its result.
@@ -476,6 +510,8 @@ impl VibeEngine {
             state: Arc::new(AtomicU8::new(VibeEngineState::Running as u8)),
             destroy_lock: Arc::new(Mutex::new(())),
             scheduler,
+            #[cfg(feature = "net-http")]
+            http: Arc::new(std::sync::OnceLock::new()),
         })
     }
 

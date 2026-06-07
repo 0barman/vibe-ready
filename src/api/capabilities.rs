@@ -26,7 +26,7 @@ impl VibeCapabilities {
         Self {
             log_store: cfg!(feature = "log-diesel"),
             work_store: cfg!(feature = "store-diesel-sqlite"),
-            network: false,
+            network: cfg!(feature = "net-http") || cfg!(feature = "net-ws"),
             encryption: false,
             wasm: cfg!(target_arch = "wasm32"),
             tracing: false,
@@ -55,7 +55,10 @@ mod tests {
             capabilities.work_store,
             cfg!(feature = "store-diesel-sqlite")
         );
-        assert!(!capabilities.network);
+        assert_eq!(
+            capabilities.network,
+            cfg!(feature = "net-http") || cfg!(feature = "net-ws")
+        );
         assert_eq!(capabilities.wasm, cfg!(target_arch = "wasm32"));
         assert!(!capabilities.encryption);
         assert!(!capabilities.tracing);
