@@ -147,6 +147,14 @@ pub use store::kv_store::VibeKvTx;
 #[doc(hidden)]
 pub use log::logger_macro::on_log as __vibe_internal_log_on_log;
 
+// Re-export `serde_json` under a hidden alias so the exported `log_*!` (and JSON
+// helper) macros can reference it through `$crate` instead of the caller's crate
+// scope. Without this, every downstream crate would be forced to declare
+// `serde_json` as a direct dependency just to invoke the macros. This alias is an
+// internal implementation detail, not public API.
+#[doc(hidden)]
+pub use serde_json as __serde_json;
+
 /// Result alias used by vibe-ready public APIs.
 pub type VibeResult<T> = Result<T, VibeEngineError>;
 

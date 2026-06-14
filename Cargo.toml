@@ -1,6 +1,6 @@
 [package]
 name = "vibe-ready"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 description = "Composable runtime, logging, scheduling, and storage foundations for vibe-coding Rust projects."
 license = "MIT"
