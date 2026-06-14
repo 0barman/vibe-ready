@@ -26,28 +26,20 @@ Add the crate to your Rust project:
 
 ```toml
 [dependencies]
-vibe-ready = "0.1.1"
+vibe-ready = "0.2.2"
 ```
-
-For local development from this repository:
-
-```toml
-[dependencies]
-vibe-ready = { path = "../vibe-ready" }
-```
-
 Default features enable SQLite-backed log and work storage:
 
 ```toml
 [dependencies]
-vibe-ready = { version = "0.1.1", features = ["log-diesel", "store-diesel-sqlite"] }
+vibe-ready = { version = "0.2.2", features = ["log-diesel", "store-diesel-sqlite"] }
 ```
 
 For tests or projects that do not need persistence:
 
 ```toml
 [dependencies]
-vibe-ready = { version = "0.1.1", default-features = false, features = ["log-noop", "store-noop"] }
+vibe-ready = { version = "0.2.2", default-features = false, features = ["log-noop", "store-noop"] }
 ```
 
 ## Quick Start
@@ -549,7 +541,7 @@ timeouts, retry/backoff, connection pooling, JSON helpers, and auth headers.
 
 ```toml
 [dependencies]
-vibe-ready = { version = "0.1.1", features = ["net-http"] }
+vibe-ready = { version = "0.2.2", features = ["net-http"] }
 ```
 
 ```rust

@@ -102,7 +102,7 @@ macro_rules! location {
 #[macro_export]
 macro_rules! internal_log_db {
     ($level:expr, $suffix:expr, $tag:expr, $first_field:expr, $( $value:expr ),*) => {
-        let values = vec![$( serde_json::json!($value) ),*];
+        let values = vec![$( $crate::__serde_json::json!($value) ),*];
         let location = std::panic::Location::caller();
         let location = format!(
             "{}:{}:{}",
@@ -114,7 +114,7 @@ macro_rules! internal_log_db {
     };
 
     ($level:expr, $suffix:expr, $tag:expr, $( $value:expr ),*) => {
-        let values = vec![$( serde_json::json!($value) ),*];
+        let values = vec![$( $crate::__serde_json::json!($value) ),*];
         let location = std::panic::Location::caller();
         let location = format!(
             "{}:{}:{}",
@@ -141,7 +141,7 @@ macro_rules! internal_log_db {
 #[macro_export]
 macro_rules! internal_log_db_ext {
     ($ext:expr, $level:expr, $suffix:expr, $tag:expr, $first_field:expr, $( $value:expr ),*) => {
-        let values = vec![$( serde_json::json!($value) ),*];
+        let values = vec![$( $crate::__serde_json::json!($value) ),*];
         let location = std::panic::Location::caller();
         let location = format!(
             "{}:{}:{}",
@@ -153,7 +153,7 @@ macro_rules! internal_log_db_ext {
     };
 
     ($ext:expr, $level:expr, $suffix:expr, $tag:expr, $( $value:expr ),*) => {
-        let values = vec![$( serde_json::json!($value) ),*];
+        let values = vec![$( $crate::__serde_json::json!($value) ),*];
         let location = std::panic::Location::caller();
         let location = format!(
             "{}:{}:{}",
@@ -368,7 +368,7 @@ macro_rules! array_to_json_string {
     ($vec:expr) => {{
         let cloned_vec = $vec.clone();
 
-        match serde_json::to_string(&cloned_vec) {
+        match $crate::__serde_json::to_string(&cloned_vec) {
             Ok(json) => json,
             Err(e) => format!("JSON serialization failed: {}", e),
         }
@@ -393,13 +393,12 @@ macro_rules! obj_array_to_json_string {
 #[macro_export]
 macro_rules! basic_type_map_to_json_string {
     ($map:expr) => {{
-        use serde::Serialize;
         use std::collections::HashMap;
 
         let cloned_map: HashMap<String, _> = $map.clone();
 
         (|| -> String {
-            match serde_json::to_string(&cloned_map) {
+            match $crate::__serde_json::to_string(&cloned_map) {
                 Ok(json) => json,
                 Err(e) => format!("JSON serialization failed: {}", e),
             }
@@ -414,7 +413,7 @@ macro_rules! impl_display_json {
         $(
             impl std::fmt::Display for $struct {
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    match serde_json::to_string(self) {
+                    match $crate::__serde_json::to_string(self) {
                         Ok(json) => write!(f, "{}", json),
                         Err(e) => write!(f, "Serialization error: {}", e),
                     }
